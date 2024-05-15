@@ -16,10 +16,13 @@ class PointCloudDataset(Dataset):
             data = pickle.load(f)
 
         self.files = []
-        self.labels = []
+        self.bounding_boxes = []
+        self.labels =  []
         for c in classes:
             self.files += [d['path'] for d in data[c] if d['num_points_in_gt'] > min_points]
-            self.labels += [d['box3d_lidar'] for d in data[c] if d['num_points_in_gt'] > min_points]
+            self.bounding_boxes += [d['box3d_lidar'] for d in data[c] if d['num_points_in_gt'] > min_points]
+            self.labels += [d['name'] for d in data[c] if d['num_points_in_gt'] > min_points]
+
 
     def __len__(self):
         return len(self.files)
@@ -29,10 +32,15 @@ class PointCloudDataset(Dataset):
         with open(point_path, 'rb') as f:
             obj_points = np.fromfile(f, dtype=np.float32).reshape(-1, 5)
         obj_points = self.pad_or_sample_points(obj_points, self.num_points)
-        # obj_points[:, :3] += self.labels[idx][:3] # normalized to real position
+        obj_points[:, :3] += self.bounding_boxes[idx][:3] # normalized to real position
 
-        label = self.labels[idx]
-        return torch.tensor(obj_points, dtype=torch.float32), torch.tensor(label, dtype=torch.float32)
+        bounding_box = self.bounding_boxes[idx]
+        one_hot_vector = torch.zeros(len(self.classes))
+        ind = self.classes.index(self.labels[idx])
+        one_hot_vector[ind] = 1.
+        print(one_hot_vector)
+
+        return torch.tensor(obj_points, dtype=torch.float32), one_hot_vector, torch.tensor(bounding_box, dtype=torch.float32)
 
     def pad_or_sample_points(self, points, num_points):
         # Padding using duplicate of the correct points, maybe alternative padding with zeros
@@ -47,16 +55,16 @@ class PointCloudDataset(Dataset):
             sampled_points = points
         return sampled_points
 
-
-datadir = "/media/kaan/Extreme SSD/nuscenes/"
-classes = ['car', 'truck', 'bus', 'trailer']
-# classes = ['car', 'pedestrian', 'truck', 'bus', 'trailer', 'motorcycle', 'bicycle']
-dataset = PointCloudDataset(datadir, classes)
-
-print(len(dataset))
-print(dataset)
-dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
-
-for i, (points, labels) in enumerate(dataloader):
-    print(points.shape, labels.shape)
-    break
+#
+# datadir = "/media/kaan/Extreme SSD/nuscenes/"
+# classes = ['car', 'truck', 'bus', 'trailer']
+# # classes = ['car', 'pedestrian', 'truck', 'bus', 'trailer', 'motorcycle', 'bicycle']
+# dataset = PointCloudDataset(datadir, classes)
+#
+# print(len(dataset))
+# print(dataset)
+# dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
+#
+# for i, (points, labels) in enumerate(dataloader):
+#     print(points.shape, labels.shape)
+#     break
