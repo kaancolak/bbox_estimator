@@ -5,7 +5,7 @@ print(torch.__version__)
 import pickle
 import numpy as np
 
-from vis_utils import center_to_corner_box3d
+from visualization.vis_utils import center_to_corner_box3d
 
 dataset_path = "/media/kaan/Extreme SSD/nuscenes/"
 db_info_path = dataset_path + "nuscenes_dbinfos_train.pkl"
@@ -57,18 +57,13 @@ bbox_yaw = data['car'][test_idx]['box3d_lidar'][6]
 
 import matplotlib.pyplot as plt
 
-x = obj_points[:, 0]
-y = obj_points[:, 1]
-z = obj_points[:, 2]
-fig = plt.figure(figsize=(8, 8))
-ax = fig.add_subplot(111, projection='3d')
-ax.scatter(x, y, z)
+
 
 
 def draw_box(ax, c, s, yaw):
     as_np = np.array([c.tolist() + s.tolist() + [yaw]]).astype(np.float32)
     corners = center_to_corner_box3d(
-        as_np[:, :3], as_np[:, 3:6], as_np[:, 6], origin=(0.5, 0.5, 0), axis=2)
+        as_np[:, :3], as_np[:, 3:6], as_np[:, 6])
     # Convert tensor to numpy
     corners = corners.numpy()
     corners = corners.squeeze(0)
@@ -88,7 +83,11 @@ def draw_box(ax, c, s, yaw):
     ax.plot3D(*zip(corners[2], corners[6]), color='b')
     ax.plot3D(*zip(corners[3], corners[7]), color='b')
 
-
+x = obj_points[:, 0]
+y = obj_points[:, 1]
+z = obj_points[:, 2]
+fig = plt.figure(figsize=(8, 8))
+ax = fig.add_subplot(111, projection='3d')
+ax.scatter(x, y, z)
 draw_box(ax, bbox_center, bbox_size, bbox_yaw)
-
 plt.show()

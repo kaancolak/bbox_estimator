@@ -5,8 +5,8 @@ import numpy as np
 def center_to_corner_box3d(centers,
                            dims,
                            angles=None,
-                           origin=(0.5, 1.0, 0.5),
-                           axis=1):
+                           origin=(0.5, 0.5, 0),
+                           axis=2):
     """Convert kitti locations, dimensions and angles to corners.
 
     Args:
@@ -48,7 +48,8 @@ def corners_nd(dims, origin=0.5):
             (3d) x0y0z0, x0y0z1, x0y1z0, x0y1z1, x1y0z0, x1y0z1, x1y1z0, x1y1z1
             where x0 < x1, y0 < y1, z0 < z1.
     """
-    ndim = int(dims.shape[1])
+    # ndim = int(dims.shape[1])  #TODO: Check this
+    ndim = int(dims.shape[1])  #TODO: Check this
     corners_norm = np.stack(
         np.unravel_index(np.arange(2 ** ndim), [2] * ndim),
         axis=1).astype(dims.dtype)
