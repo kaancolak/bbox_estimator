@@ -13,19 +13,23 @@ NUM_HEADING_BIN = 12
 NUM_SIZE_CLUSTER = 8  # one cluster for each type
 NUM_OBJECT_POINT = 512
 
-g_type2class = {'Car': 0, 'Van': 1, 'Truck': 2, 'Pedestrian': 3,
-                'Person_sitting': 4, 'Cyclist': 5, 'Tram': 6, 'Misc': 7}
+g_type2class = {'car': 0, 'truck': 1, 'bus': 2, 'trailer': 3}
 g_class2type = {g_type2class[t]: t for t in g_type2class}
-g_type2onehotclass = {'Car': 0, 'Pedestrian': 1, 'Cyclist': 2}
+g_type2onehotclass = {'car': 0, 'truck': 1, 'bus': 2, 'trailer': 3}
 
-g_type_mean_size = {'Car': np.array([3.88311640418, 1.62856739989, 1.52563191462]),
-                    'Van': np.array([5.06763659, 1.9007158, 2.20532825]),
-                    'Truck': np.array([10.13586957, 2.58549199, 3.2520595]),
-                    'Pedestrian': np.array([0.84422524, 0.66068622, 1.76255119]),
-                    'Person_sitting': np.array([0.80057803, 0.5983815, 1.27450867]),
-                    'Cyclist': np.array([1.76282397, 0.59706367, 1.73698127]),
-                    'Tram': np.array([16.17150617, 2.53246914, 3.53079012]),
-                    'Misc': np.array([3.64300781, 1.54298177, 1.92320313])}
+# g_type_mean_size = {'Car': np.array([3.88311640418, 1.62856739989, 1.52563191462]),
+#                     'Van': np.array([5.06763659, 1.9007158, 2.20532825]),
+#                     'Truck': np.array([10.13586957, 2.58549199, 3.2520595]),
+#                     'Pedestrian': np.array([0.84422524, 0.66068622, 1.76255119]),
+#                     'Person_sitting': np.array([0.80057803, 0.5983815, 1.27450867]),
+#                     'Cyclist': np.array([1.76282397, 0.59706367, 1.73698127]),
+#                     'Tram': np.array([16.17150617, 2.53246914, 3.53079012]),
+#                     'Misc': np.array([3.64300781, 1.54298177, 1.92320313])}
+
+g_type_mean_size = {'car': np.array([4.6344314, 1.9600292, 1.7375569]),
+                    'truck': np.array([6.936331, 2.5178623, 2.8506238]),
+                    'bus': np.array([11.194943, 2.9501154, 3.4918275]),
+                    'trailer': np.array([12.275775, 2.9231303, 3.87086])}
 
 
 class PointNetEstimation(nn.Module):
@@ -116,8 +120,8 @@ class FrustumPointNetv1(nn.Module):
         super(FrustumPointNetv1, self).__init__()
         self.n_classes = n_classes
         self.n_channel = n_channel
-        self.STN = STNxyz(n_classes=1)
-        self.est = PointNetEstimation(n_classes=1)
+        self.STN = STNxyz(n_classes=self.n_classes)
+        self.est = PointNetEstimation(n_classes=self.n_classes)
         self.Loss = FrustumPointNetLoss()
 
     def forward(self, data_dicts):
@@ -145,6 +149,7 @@ class FrustumPointNetv1(nn.Module):
         # object_pts_xyz, mask_xyz_mean, mask = \
         #     point_cloud_masking(point_cloud, logits)
 
+        # todo:add .cuda() and remove other cuda moving operations
         clusters_mean = torch.mean(point_cloud, 2)  # bs,3
 
         # T-Net
@@ -168,6 +173,7 @@ class FrustumPointNetv1(nn.Module):
 
         box3d_center = center_boxnet + stage1_center  # bs,3
 
+        # TODO:below could be remove
         box3d_center_label = box3d_center_label.cuda()
         heading_class_label = heading_class_label.cuda()
         heading_residual_label = heading_residual_label.cuda()

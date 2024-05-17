@@ -58,8 +58,8 @@ def test_one_epoch(model, loader):
     return test_losses, test_metrics
 
 
-# classes = ['car', 'truck', 'bus', 'trailer']
-classes = ['car']
+classes = ['car', 'truck', 'bus', 'trailer']
+# classes = ['car']
 # # classes = ['car', 'pedestrian', 'truck', 'bus', 'trailer', 'motorcycle', 'bicycle']
 model = FrustumPointNetv1(len(classes))
 model.to('cuda')
@@ -67,10 +67,10 @@ model.to('cuda')
 optimizer = optim.Adam(model.parameters(), lr=0.001)
 
 datadir = "/home/kaan/datas/"
-dataset = PointCloudDataset(datadir, classes)
+dataset = PointCloudDataset(datadir, classes, min_points=16)
 
 dataset_size = len(dataset)
-train_size = int(0.70 * dataset_size)
+train_size = int(0.80 * dataset_size)
 val_size = int(0.10 * dataset_size)
 test_size = dataset_size - train_size - val_size
 
