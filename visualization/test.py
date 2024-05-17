@@ -8,7 +8,7 @@ import numpy as np
 from visualization.vis_utils import center_to_corner_box3d
 
 dataset_path = "/home/kaan/datas/"
-db_info_path = dataset_path + "nuscenes_dbinfos_train.pkl"
+db_info_path = dataset_path + "nuscenes_dbinfos.pkl"
 with open(db_info_path, 'rb') as f:
     data = pickle.load(f)
 
@@ -23,6 +23,35 @@ print("car: " + str(len(data['car'])))
 print("truck: " + str(len(data['truck'])))
 print("bus: " + str(len(data['bus'])))
 print("trailer: " + str(len(data['trailer'])))
+
+print("Total : " + str(len(data)))
+
+
+data_train = {}
+data_val = {}
+
+
+print(type(data))
+for d in data.keys():
+    print(d)
+    data_train[d] = data[d][:int(len(data[d]) * 0.8)]
+    data_val[d] = data[d][int(len(data[d]) * 0.8):]
+
+
+
+print("Train: " + str(len(data_train)))
+print("car: " + str(len(data_train['car'])))
+print("Val: " + str(len(data_val)))
+print("car: " + str(len(data_val['car'])))
+
+
+print(data_val['car'][0])
+
+with open('/home/kaan/datas/dbinfos_train.pkl', 'wb') as f:
+    pickle.dump(data_train, f)
+
+with open('/home/kaan/datas/dbinfos_val.pkl', 'wb') as f:
+    pickle.dump(data_val, f)
 
 # print("pedestrian:" + len(data['pedestrian']))  # 161928
 # print("motorcycle: " + len(data['motorcycle']))  # 8846
@@ -56,14 +85,14 @@ print("trailer: " + str(len(data['trailer'])))
 # #                       dtype=float32),
 # #  'num_points_in_gt': 1672, 'difficulty': 0, 'group_id': 3}
 #
-filtered_car = [d for d in data['car'] if d['num_points_in_gt'] > 20]
-print("Len filtered cars:" + str(len(filtered_car)))  # 339949
-
-filtered_truck = [d for d in data['truck'] if d['num_points_in_gt'] > 20]
-print("Len filtered truck:" + str(len(filtered_truck)))  # 339949
-
-filtered_bus = [d for d in data['bus'] if d['num_points_in_gt'] > 20]
-print("Len filtered bus:" + str(len(filtered_bus)))  # 339949
+# filtered_car = [d for d in data['car'] if d['num_points_in_gt'] > 20]
+# print("Len filtered cars:" + str(len(filtered_car)))  # 339949
+#
+# filtered_truck = [d for d in data['truck'] if d['num_points_in_gt'] > 20]
+# print("Len filtered truck:" + str(len(filtered_truck)))  # 339949
+#
+# filtered_bus = [d for d in data['bus'] if d['num_points_in_gt'] > 20]
+# print("Len filtered bus:" + str(len(filtered_bus)))  # 339949
 
 
 # obj_point_path = dataset_path + data['car'][test_idx]['path']
@@ -83,7 +112,7 @@ print("Len filtered bus:" + str(len(filtered_bus)))  # 339949
 #
 #
 #
-#
+
 # def draw_box(ax, c, s, yaw):
 #     as_np = np.array([c.tolist() + s.tolist() + [yaw]]).astype(np.float32)
 #     corners = center_to_corner_box3d(
@@ -106,7 +135,7 @@ print("Len filtered bus:" + str(len(filtered_bus)))  # 339949
 #     ax.plot3D(*zip(corners[1], corners[5]), color='b')
 #     ax.plot3D(*zip(corners[2], corners[6]), color='b')
 #     ax.plot3D(*zip(corners[3], corners[7]), color='b')
-#
+
 # x = obj_points[:, 0]
 # y = obj_points[:, 1]
 # z = obj_points[:, 2]

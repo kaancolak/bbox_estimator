@@ -67,20 +67,12 @@ model.to('cuda')
 optimizer = optim.Adam(model.parameters(), lr=0.001)
 
 datadir = "/home/kaan/datas/"
-dataset = PointCloudDataset(datadir, classes, min_points=16)
+dataset_train = PointCloudDataset(datadir, classes, min_points=16, train=True, augment_data=True)
+train_dataloader = DataLoader(dataset_train, batch_size=32, shuffle=True)
 
-dataset_size = len(dataset)
-train_size = int(0.80 * dataset_size)
-val_size = int(0.10 * dataset_size)
-test_size = dataset_size - train_size - val_size
+dataset_test = PointCloudDataset(datadir, classes, min_points=16, train=False, augment_data=False)
+test_dataloader = DataLoader(dataset_train, batch_size=32, shuffle=True)
 
-# Split the dataset
-train_dataset, val_dataset, test_dataset = random_split(dataset,
-                                                        [train_size, val_size, test_size])
-
-train_dataloader = DataLoader(train_dataset, batch_size=32, shuffle=True)
-val_dataload = DataLoader(val_dataset, batch_size=32, shuffle=True)
-test_dataloader = DataLoader(test_dataset, batch_size=32, shuffle=True)
 
 max_epochs = 150
 
