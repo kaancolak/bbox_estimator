@@ -113,28 +113,28 @@ with open('/home/kaan/datas/dbinfos_val.pkl', 'wb') as f:
 #
 #
 
-# def draw_box(ax, c, s, yaw):
-#     as_np = np.array([c.tolist() + s.tolist() + [yaw]]).astype(np.float32)
-#     corners = center_to_corner_box3d(
-#         as_np[:, :3], as_np[:, 3:6], as_np[:, 6])
-#     # Convert tensor to numpy
-#     corners = corners.numpy()
-#     corners = corners.squeeze(0)
-#     print(corners)
-#
-#     # Verticals
-#     ax.plot3D(*zip(corners[0], corners[1]), color='b')
-#     ax.plot3D(*zip(corners[2], corners[3]), color='b')
-#     ax.plot3D(*zip(corners[4], corners[5]), color='b')
-#     ax.plot3D(*zip(corners[6], corners[7]), color='b')
-#     ax.plot3D(*zip(corners[0], corners[3]), color='b')
-#     ax.plot3D(*zip(corners[4], corners[7]), color='b')
-#     ax.plot3D(*zip(corners[1], corners[2]), color='b')
-#     ax.plot3D(*zip(corners[5], corners[6]), color='b')
-#     ax.plot3D(*zip(corners[0], corners[4]), color='b')
-#     ax.plot3D(*zip(corners[1], corners[5]), color='b')
-#     ax.plot3D(*zip(corners[2], corners[6]), color='b')
-#     ax.plot3D(*zip(corners[3], corners[7]), color='b')
+def draw_box(ax, c, s, yaw):
+    as_np = np.array([c.tolist() + s.tolist() + [yaw]]).astype(np.float32)
+    corners = center_to_corner_box3d(
+        as_np[:, :3], as_np[:, 3:6], as_np[:, 6])
+    # Convert tensor to numpy
+    corners = corners.numpy()
+    corners = corners.squeeze(0)
+    print(corners)
+
+    # Verticals
+    ax.plot3D(*zip(corners[0], corners[1]), color='b')
+    ax.plot3D(*zip(corners[2], corners[3]), color='b')
+    ax.plot3D(*zip(corners[4], corners[5]), color='b')
+    ax.plot3D(*zip(corners[6], corners[7]), color='b')
+    ax.plot3D(*zip(corners[0], corners[3]), color='b')
+    ax.plot3D(*zip(corners[4], corners[7]), color='b')
+    ax.plot3D(*zip(corners[1], corners[2]), color='b')
+    ax.plot3D(*zip(corners[5], corners[6]), color='b')
+    ax.plot3D(*zip(corners[0], corners[4]), color='b')
+    ax.plot3D(*zip(corners[1], corners[5]), color='b')
+    ax.plot3D(*zip(corners[2], corners[6]), color='b')
+    ax.plot3D(*zip(corners[3], corners[7]), color='b')
 
 # x = obj_points[:, 0]
 # y = obj_points[:, 1]

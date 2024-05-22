@@ -9,6 +9,8 @@ from models.model_utils import FrustumPointNetLoss
 
 from models.provider import compute_box3d_iou
 
+from models.pointnet2_utils import *
+
 NUM_HEADING_BIN = 12
 NUM_SIZE_CLUSTER = 4  # one cluster for each type
 NUM_OBJECT_POINT = 512
@@ -24,30 +26,26 @@ g_type_mean_size = {'car': np.array([4.6344314, 1.9600292, 1.7375569]),
                     'trailer': np.array([12.275775, 2.9231303, 3.87086])}
 
 
-class PointNetEstimation(nn.Module):
+class PointNetEstimationV2(nn.Module):
     def __init__(self, n_classes=2):
         '''v1 Amodal 3D Box Estimation Pointnet
         :param n_classes:3
         :param one_hot_vec:[bs,n_classes]
         '''
-        super(PointNetEstimation, self).__init__()
-        self.conv1 = nn.Conv1d(3, 128, 1)
-        self.conv2 = nn.Conv1d(128, 128, 1)
-        self.conv3 = nn.Conv1d(128, 256, 1)
-        self.conv4 = nn.Conv1d(256, 512, 1)
-        self.bn1 = nn.BatchNorm1d(128)
+        super(PointNetEstimationV2, self).__init__()
+
+        self.sa1 = PointNetSetAbstraction(128, 0.1, 32, in_channel=3, mlp=[32, 32, 64], group_all=False)
+        self.sa2 = PointNetSetAbstraction(32, 0.2, 32, in_channel=64 + 3, mlp=[64, 64, 128], group_all=False)
+        self.sa3 = PointNetSetAbstraction(npoint=None, radius=None, nsample=None, in_channel=128 + 3,
+                                          mlp=[128, 128, 256], group_all=True)
+
+        self.fc1 = nn.Linear(256 + n_classes, 256)
+        self.bn1 = nn.BatchNorm1d(256)
+        self.drop1 = nn.Dropout(0.5)
+        self.fc2 = nn.Linear(256, 128)
         self.bn2 = nn.BatchNorm1d(128)
-        self.bn3 = nn.BatchNorm1d(256)
-        self.bn4 = nn.BatchNorm1d(512)
-
-        self.n_classes = n_classes
-
-        self.fc1 = nn.Linear(512 + self.n_classes, 512)
-        self.fc2 = nn.Linear(512, 256)
-
-        self.fc3 = nn.Linear(256, 3 + NUM_HEADING_BIN * 2 + NUM_SIZE_CLUSTER * 4)
-        self.fcbn1 = nn.BatchNorm1d(512)
-        self.fcbn2 = nn.BatchNorm1d(256)
+        self.drop2 = nn.Dropout(0.5)
+        self.fc3 = nn.Linear(128, 3 + NUM_HEADING_BIN * 2 + NUM_SIZE_CLUSTER * 4)
 
     def forward(self, pts, one_hot_vec):  # bs,3,m
         '''
@@ -59,18 +57,21 @@ class PointNetEstimation(nn.Module):
         bs = pts.size()[0]
         n_pts = pts.size()[2]
 
-        out1 = F.relu(self.bn1(self.conv1(pts)))  # bs,128,n
-        out2 = F.relu(self.bn2(self.conv2(out1)))  # bs,128,n
-        out3 = F.relu(self.bn3(self.conv3(out2)))  # bs,256,n
-        out4 = F.relu(self.bn4(self.conv4(out3)))  # bs,512,n
-        global_feat = torch.max(out4, 2, keepdim=False)[0]  # bs,512
+        l1_xyz, l1_points = self.sa1(pts, None)
+        l2_xyz, l2_points = self.sa2(l1_xyz, l1_points)
+        l3_xyz, l3_points = self.sa3(l2_xyz, l2_points)
+
+        global_feat = l3_points.view(bs, -1)
 
         expand_one_hot_vec = one_hot_vec.view(bs, -1)  # bs,3
         expand_global_feat = torch.cat([global_feat, expand_one_hot_vec], 1)  # bs,515
 
-        x = F.relu(self.fcbn1(self.fc1(expand_global_feat)))  # bs,512
-        x = F.relu(self.fcbn2(self.fc2(x)))  # bs,256
-        box_pred = self.fc3(x)  # bs,3+NUM_HEADING_BIN*2+NUM_SIZE_CLUSTER*4
+        x = F.relu(self.bn1(self.fc1(expand_global_feat)))
+        x = self.drop1(x)
+        x = F.relu(self.bn2(self.fc2(x)))
+        x = self.drop2(x)
+        box_pred = self.fc3(x)
+
         return box_pred
 
 
@@ -108,18 +109,17 @@ class STNxyz(nn.Module):
         return x
 
 
-class FrustumPointNetv1(nn.Module):
+class FrustumPointNetv2(nn.Module):
     def __init__(self, n_classes=3, n_channel=3):
-        super(FrustumPointNetv1, self).__init__()
+        super(FrustumPointNetv2, self).__init__()
         self.n_classes = n_classes
         self.n_channel = n_channel
         self.STN = STNxyz(n_classes=self.n_classes)
-        self.est = PointNetEstimation(n_classes=self.n_classes)
+        self.est = PointNetEstimationV2(n_classes=self.n_classes)
         self.Loss = FrustumPointNetLoss()
 
     def forward(self, data_dicts):
         # dict_keys(['point_cloud', 'rot_angle', 'box3d_center', 'size_class', 'size_residual', 'angle_class', 'angle_residual', 'one_hot', 'seg'])
-
 
         point_cloud = data_dicts.get('point_cloud')  # torch.Size([32, 4, 1024]) +
 

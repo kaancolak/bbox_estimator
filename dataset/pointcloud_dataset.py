@@ -7,14 +7,15 @@ from torch.utils.data import Dataset, DataLoader
 from models.provider import *
 
 NUM_HEADING_BIN = 12
-NUM_SIZE_CLUSTER = 8  # one cluster for each type
+NUM_SIZE_CLUSTER = 4  # one cluster for each type
 NUM_OBJECT_POINT = 512
 
 
 class PointCloudDataset(Dataset):
-    def __init__(self, data_dir, classes, num_points=512, min_points=10, train=True, augment_data=False,
-                 use_mirror=True,
-                 use_shift=True):
+    def __init__(self, data_dir, classes, num_points=512, min_points=10, train=True,
+                 augment_data=False,
+                 use_mirror=False,
+                 use_shift=False):
         self.data_dir = data_dir
         self.classes = classes
         self.num_points = num_points
@@ -39,6 +40,7 @@ class PointCloudDataset(Dataset):
             self.bounding_boxes += [d['box3d_lidar'] for d in data[c] if d['num_points_in_gt'] > min_points]
             self.labels += [d['name'] for d in data[c] if d['num_points_in_gt'] > min_points]
 
+
     def __len__(self):
         return len(self.files)
 
@@ -46,6 +48,8 @@ class PointCloudDataset(Dataset):
         point_path = self.data_dir + self.files[idx]
         with open(point_path, 'rb') as f:
             obj_points = np.fromfile(f, dtype=np.float32).reshape(-1, 5)
+
+        # print(obj_points.shape)
         obj_points = self.pad_or_sample_points(obj_points, self.num_points)
         obj_points[:, :3] += self.bounding_boxes[idx][:3]  # normalized to real position
 
@@ -70,18 +74,17 @@ class PointCloudDataset(Dataset):
         one_hot_vector[ind] = 1.
         box_center = bounding_box[:3]
         box_size = bounding_box[3:6]
-        size_class, residual = size2class(box_size, "car")
+
+        size_class, residual = size2class(box_size, self.labels[idx])
         yaw = bounding_box[6]
         angle_class, angle_residual = angle2class(yaw,
                                                   NUM_HEADING_BIN)
         data = {
             'point_cloud': torch.tensor(obj_points, dtype=torch.float32),
             'one_hot': one_hot_vector,
-            # 'box3d_center': torch.tensor(box_center, dtype=torch.float32),
-            'box3d_center': box_center,
-            'size_class': size_class,
-            # 'size_residual': torch.tensor(residual, dtype=torch.float32),
-            'size_residual': residual,
+            'box3d_center': torch.tensor(box_center, dtype=torch.float32),
+            'size_class': torch.tensor(size_class, dtype=torch.float32),
+            'size_residual': torch.tensor(residual, dtype=torch.float32),
             'angle_class': torch.tensor(angle_class, dtype=torch.float32),
             'angle_residual': torch.tensor(angle_residual, dtype=torch.float32),
         }
@@ -172,14 +175,16 @@ class PointCloudDataset(Dataset):
 # #
 # # #
 # datadir = "/home/kaan/datas/"
-# # classes = ['car', 'truck', 'bus', 'trailer']
+# classes = ['car', 'truck', 'bus', 'trailer']
 # # # classes = ['car', 'pedestrian', 'truck', 'bus', 'trailer', 'motorcycle', 'bicycle']
-# classes = ['car']
-# dataset = PointCloudDataset(datadir, classes, use_mirror=True, use_shift=True)
+# # classes = ['car']
+# dataset = PointCloudDataset(datadir, classes, min_points=4000, train=True, augment_data=True, use_mirror=True, use_shift=True)
 # # from timeit import default_timer as timer
 # #
 # # start = timer()
 # d = dataset.__getitem__(120)
+#
+#
 # # end = timer()
 # # print(end - start)
 # # start = timer()
@@ -194,9 +199,17 @@ class PointCloudDataset(Dataset):
 # # print(dataset.__getitem__(100).keys())
 # #
 # heading_angle = class2angle(d['angle_class'], d['angle_residual'], NUM_HEADING_BIN)
-# box_size = class2size(d['size_class'], d['size_residual'])
+#
+# def class2size_test(pred_cls, residual):
+#     ''' Inverse function to size2class. '''
+#     type_str = g_class2type[pred_cls.item()]
+#     mean_size = g_type_mean_size[type_str]
+#
+#     return mean_size + residual.numpy()
+#
+# box_size = class2size_test(d['size_class'], d['size_residual'])
 # #
-# # # corners_3d = get_3d_box(box_size, heading_angle, d['box3d_center'])
+# # corners_3d = get_3d_box(box_size, heading_angle, d['box3d_center'])
 # #
 # # from models.box_utils import center_to_corner_box3d, center_to_corner_box3d_torch, center_to_corner_box3d_numpy
 # #
@@ -204,7 +217,7 @@ class PointCloudDataset(Dataset):
 # # # print(d['box3d_center'])
 # # # print(box_size)
 # # # print(heading_angle)
-# # corner3d = center_to_corner_box3d_numpy(d['box3d_center'], box_size, heading_angle)
+# corner3d = center_to_corner_box3d_numpy(d['box3d_center'], box_size, heading_angle)
 # #
 # # print(corner3d)
 # # from models.box_utils import box3d_iou
@@ -246,7 +259,7 @@ class PointCloudDataset(Dataset):
 # # corner3d_torch = center_to_corner_box3d_torch(centers, sizes, angles)
 # # print(corner3d_torch)
 #
-# from visualization.vis_utils import center_to_corner_box3d
+# # from visualization.vis_utils import center_to_corner_box3d
 # from visualization.test import draw_box
 #
 # import matplotlib.pyplot as plt
@@ -262,4 +275,4 @@ class PointCloudDataset(Dataset):
 # plt.show()
 #
 # #
-# # dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
+# dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
