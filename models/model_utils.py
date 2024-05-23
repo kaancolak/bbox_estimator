@@ -1,35 +1,11 @@
-import os
-import sys
-
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(BASE_DIR)
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from models.box_utils import center_to_corner_box3d, center_to_corner_box3d_torch
-
-# -----------------
-# Global Constants
-# -----------------
-
-NUM_HEADING_BIN = 12
-NUM_SIZE_CLUSTER = 4  # 8 # one cluster for each type
-NUM_OBJECT_POINT = 512
-
-g_type2class = {'car': 0, 'truck': 1, 'bus': 2, 'trailer': 3}
-g_class2type = {g_type2class[t]: t for t in g_type2class}
-g_type2onehotclass = {'car': 0, 'truck': 1, 'bus': 2, 'trailer': 3}
-
-g_type_mean_size = {'car': np.array([4.6344314, 1.9600292, 1.7375569]),
-                    'truck': np.array([6.936331, 2.5178623, 2.8506238]),
-                    'bus': np.array([11.194943, 2.9501154, 3.4918275]),
-                    'trailer': np.array([12.275775, 2.9231303, 3.87086])}
-
-g_mean_size_arr = np.zeros((NUM_SIZE_CLUSTER, 3))  # size clustrs
-for i in range(NUM_SIZE_CLUSTER):
-    g_mean_size_arr[i, :] = g_type_mean_size[g_class2type[i]]
+from utils.box_utils import center_to_corner_box3d_torch
+from dataset.pointcloud_dataset import NUM_HEADING_BIN, NUM_SIZE_CLUSTER, NUM_OBJECT_POINT
+from dataset.pointcloud_dataset import g_mean_size_arr
 
 
 def parse_output_to_tensors(box_pred, stage1_center):
@@ -74,71 +50,16 @@ def parse_output_to_tensors(box_pred, stage1_center):
 
     size_residual = size_residual_normalized * \
                     torch.from_numpy(g_mean_size_arr).unsqueeze(0).repeat(bs, 1, 1).cuda()
-    return center_boxnet, \
-        heading_scores, heading_residual_normalized, heading_residual, \
-        size_scores, size_residual_normalized, size_residual
 
-
-def point_cloud_masking(pts, logits, xyz_only=True):
-    '''
-    :param pts: bs,c,n in frustum
-    :param logits: bs,n,2
-    :param xyz_only: bool
-    :return:
-    '''
-    bs = pts.shape[0]
-    n_pts = pts.shape[2]
-    # Binary Classification for each point
-    mask = logits[:, :, 0] < logits[:, :, 1]  # (bs, n)
-    mask = mask.unsqueeze(1).float()  # (bs, 1, n)
-    mask_count = mask.sum(2, keepdim=True).repeat(1, 3, 1)  # (bs, 3, 1)
-    pts_xyz = pts[:, :3, :]  # (bs,3,n)
-    mask_xyz_mean = (mask.repeat(1, 3, 1) * pts_xyz).sum(2, keepdim=True)  # (bs, 3, 1)
-    mask_xyz_mean = mask_xyz_mean / torch.clamp(mask_count, min=1)  # (bs, 3, 1)
-    mask = mask.squeeze()  # (bs,n)
-    pts_xyz_stage1 = pts_xyz - mask_xyz_mean.repeat(1, 1, n_pts)
-
-    if xyz_only:
-        pts_stage1 = pts_xyz_stage1
-    else:
-        pts_features = pts[:, 3:, :]
-        pts_stage1 = torch.cat([pts_xyz_stage1, pts_features], dim=-1)
-    object_pts, _ = gather_object_pts(pts_stage1, mask, NUM_OBJECT_POINT)
-    # (32,512,3) (32,512)
-    object_pts = object_pts.reshape(bs, NUM_OBJECT_POINT, -1)
-    object_pts = object_pts.float().view(bs, 3, -1)
-    return object_pts, mask_xyz_mean.squeeze(), mask
-
-
-def gather_object_pts(pts, mask, n_pts=NUM_OBJECT_POINT):
-    '''
-    :param pts: (bs,c,1024)
-    :param mask: (bs,1024)
-    :param n_pts: max number of points of an object
-    :return:
-        object_pts:(bs,c,n_pts)
-        indices:(bs,n_pts)
-    '''
-    bs = pts.shape[0]
-    indices = torch.zeros((bs, n_pts), dtype=torch.int64)  # (bs, 512)
-    object_pts = torch.zeros((bs, pts.shape[1], n_pts))
-
-    for i in range(bs):
-        pos_indices = torch.where(mask[i, :] > 0.5)[0]  # (653,)
-        if len(pos_indices) > 0:
-            if len(pos_indices) > n_pts:
-                choice = np.random.choice(len(pos_indices),
-                                          n_pts, replace=False)
-            else:
-                choice = np.random.choice(len(pos_indices),
-                                          n_pts - len(pos_indices), replace=True)
-                choice = np.concatenate(
-                    (np.arange(len(pos_indices)), choice))
-            np.random.shuffle(choice)  # (512,)
-            indices[i, :] = pos_indices[choice]
-            object_pts[i, :, :] = pts[i, :, indices[i, :]]
-        ###else?
-    return object_pts, indices
+    return {
+        'center_boxnet': center_boxnet,
+        'heading_scores': heading_scores,
+        'heading_residual_normalized': heading_residual_normalized,
+        'heading_residual': heading_residual,
+        'size_scores': size_scores,
+        'size_residual_normalized': size_residual_normalized,
+        'size_residual': size_residual
+    }
 
 
 def get_box3d_corners(center, heading_residual, size_residual):
@@ -184,12 +105,7 @@ class FrustumPointNetLoss(nn.Module):
     def __init__(self):
         super(FrustumPointNetLoss, self).__init__()
 
-    def forward(self, \
-                center, center_label, stage1_center, \
-                heading_scores, heading_residual_normalized, heading_residual, \
-                heading_class_label, heading_residual_label, \
-                size_scores, size_residual_normalized, size_residual,
-                size_class_label, size_residual_label,
+    def forward(self, center, stage1_center, pred_parsed, gt,
                 corner_loss_weight=10.0, box_loss_weight=1.0):
         '''
         1.InsSeg
@@ -217,11 +133,21 @@ class FrustumPointNetLoss(nn.Module):
         box_loss_weight: float scalar
 
         '''
+
+        heading_scores = pred_parsed['heading_scores']
+        heading_residual_normalized = pred_parsed['heading_residual_normalized']
+        heading_residual = pred_parsed['heading_residual']
+        size_scores = pred_parsed['size_scores']
+        size_residual_normalized = pred_parsed['size_residual_normalized']
+        size_residual = pred_parsed['size_residual']
+
+        center_label = gt['box3d_center']
+        heading_class_label = gt['angle_class']
+        heading_residual_label = gt['angle_residual']
+        size_class_label = gt['size_class']
+        size_residual_label = gt['size_residual']
+
         bs = center.shape[0]
-        # 3D Instance Segmentation PointNet Loss
-        # logits = F.log_softmax(logits.view(-1,2),dim=1)#torch.Size([32768, 2])
-        # mask_label = mask_label.view(-1).long()#torch.Size([32768])
-        # mask_loss = F.nll_loss(logits, mask_label)#tensor(0.6361, grad_fn=<NllLossBackward>)
 
         # Center Regression Loss
         center_dist = torch.norm(center - center_label, dim=1)  # (32,)
@@ -282,7 +208,6 @@ class FrustumPointNetLoss(nn.Module):
                      size_residual_label.view(bs, 1, 3)  # (1,NS,3)+(bs,1,3)=(bs,NS,3)
         size_label = torch.sum( \
             scls_onehot.view(bs, NUM_SIZE_CLUSTER, 1).float() * size_label, axis=[1])  # (B,3)
-
 
         corners_3d_gt = center_to_corner_box3d_torch(center_label, size_label, heading_label)  # (B,8,3)
         corners_3d_gt_flip = center_to_corner_box3d_torch(center_label, size_label, heading_label + np.pi)  # (B,8,3)

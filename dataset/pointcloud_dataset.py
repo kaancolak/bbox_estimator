@@ -4,11 +4,27 @@ import torch
 import pickle
 from torch.utils.data import Dataset, DataLoader
 
-from models.provider import *
+
+# -----------------
+# Global Constants
+# -----------------
 
 NUM_HEADING_BIN = 12
-NUM_SIZE_CLUSTER = 4  # one cluster for each type
+NUM_SIZE_CLUSTER = 4  # 8 # one cluster for each type
 NUM_OBJECT_POINT = 512
+
+g_type2class = {'car': 0, 'truck': 1, 'bus': 2, 'trailer': 3}
+g_class2type = {g_type2class[t]: t for t in g_type2class}
+g_type2onehotclass = {'car': 0, 'truck': 1, 'bus': 2, 'trailer': 3}
+
+g_type_mean_size = {'car': np.array([4.6344314, 1.9600292, 1.7375569]),
+                    'truck': np.array([6.936331, 2.5178623, 2.8506238]),
+                    'bus': np.array([11.194943, 2.9501154, 3.4918275]),
+                    'trailer': np.array([12.275775, 2.9231303, 3.87086])}
+
+g_mean_size_arr = np.zeros((NUM_SIZE_CLUSTER, 3))  # size clustrs
+for i in range(NUM_SIZE_CLUSTER):
+    g_mean_size_arr[i, :] = g_type_mean_size[g_class2type[i]]
 
 
 class PointCloudDataset(Dataset):
@@ -39,7 +55,6 @@ class PointCloudDataset(Dataset):
             self.files += [d['path'] for d in data[c] if d['num_points_in_gt'] > min_points]
             self.bounding_boxes += [d['box3d_lidar'] for d in data[c] if d['num_points_in_gt'] > min_points]
             self.labels += [d['name'] for d in data[c] if d['num_points_in_gt'] > min_points]
-
 
     def __len__(self):
         return len(self.files)
@@ -75,9 +90,9 @@ class PointCloudDataset(Dataset):
         box_center = bounding_box[:3]
         box_size = bounding_box[3:6]
 
-        size_class, residual = size2class(box_size, self.labels[idx])
+        size_class, residual = self.size2class(box_size, self.labels[idx])
         yaw = bounding_box[6]
-        angle_class, angle_residual = angle2class(yaw,
+        angle_class, angle_residual = self.angle2class(yaw,
                                                   NUM_HEADING_BIN)
         data = {
             'point_cloud': torch.tensor(obj_points, dtype=torch.float32),
@@ -104,10 +119,8 @@ class PointCloudDataset(Dataset):
             sampled_points = points
         return sampled_points
 
-    def size2class(bbox, type_name):  # todo: kaan look there
+    def size2class(self, bbox, type_name):
         ''' Convert 3D bounding box size to template class and residual.
-        todo (rqi): support multiple size clusters per type.
-
         Input:
             size: numpy array of shape (3,) for (l,w,h)
             type_name: string
@@ -119,7 +132,7 @@ class PointCloudDataset(Dataset):
         size_residual = bbox - g_type_mean_size[type_name]
         return size_class, size_residual
 
-    def angle2class(angle, num_class):  # todo: kaan look there
+    def angle2class(self, angle, num_class):
         ''' Convert continuous angle to discrete class and residual.
 
         Input:
@@ -171,108 +184,3 @@ class PointCloudDataset(Dataset):
         shifted_label[:2] += np.array([shift_x, shift_y])  # Shift the center of the bounding box
 
         return shifted_point_cloud, shifted_label
-
-# #
-# # #
-# datadir = "/home/kaan/datas/"
-# classes = ['car', 'truck', 'bus', 'trailer']
-# # # classes = ['car', 'pedestrian', 'truck', 'bus', 'trailer', 'motorcycle', 'bicycle']
-# # classes = ['car']
-# dataset = PointCloudDataset(datadir, classes, min_points=4000, train=True, augment_data=True, use_mirror=True, use_shift=True)
-# # from timeit import default_timer as timer
-# #
-# # start = timer()
-# d = dataset.__getitem__(120)
-#
-#
-# # end = timer()
-# # print(end - start)
-# # start = timer()
-# # d = dataset.__getitem__(6)
-# # end = timer()
-# # print(end - start)
-# # start = timer()
-# # d = dataset.__getitem__(0)
-# # end = timer()
-# # print(end - start)
-# #
-# # print(dataset.__getitem__(100).keys())
-# #
-# heading_angle = class2angle(d['angle_class'], d['angle_residual'], NUM_HEADING_BIN)
-#
-# def class2size_test(pred_cls, residual):
-#     ''' Inverse function to size2class. '''
-#     type_str = g_class2type[pred_cls.item()]
-#     mean_size = g_type_mean_size[type_str]
-#
-#     return mean_size + residual.numpy()
-#
-# box_size = class2size_test(d['size_class'], d['size_residual'])
-# #
-# # corners_3d = get_3d_box(box_size, heading_angle, d['box3d_center'])
-# #
-# # from models.box_utils import center_to_corner_box3d, center_to_corner_box3d_torch, center_to_corner_box3d_numpy
-# #
-# # # print("np version: ")
-# # # print(d['box3d_center'])
-# # # print(box_size)
-# # # print(heading_angle)
-# corner3d = center_to_corner_box3d_numpy(d['box3d_center'], box_size, heading_angle)
-# #
-# # print(corner3d)
-# # from models.box_utils import box3d_iou
-# #
-# # print("************")
-# # print("************")
-# # print("************")
-# # print("************")
-# # print(box3d_iou(corner3d, corner3d))
-# # # center = torch.from_numpy(d['box3d_center'])
-# # # center = torch.unsqueeze(center, 0)
-# # # size = torch.from_numpy(box_size)
-# # # size = torch.unsqueeze(size, 0)
-# # # # print(type(heading_angle))
-# # # # heading = torch.from_numpy(heading_angle)
-# # #
-# # centers = torch.tensor([
-# #     [4.441864,  11.292346,  -1.5824497],  # Center of the first box
-# # ], dtype=torch.float32)
-# #
-# # sizes = torch.tensor([
-# #     [4.66099977, 1.85500002, 1.76300001],  # Size of the first box (length, width, height)
-# # ], dtype=torch.float32)
-# #
-# # angles = torch.tensor([
-# #     -0.9111         # Rotation angle of the third box (in radians)
-# # ], dtype=torch.float32)
-#
-#
-# #
-# #
-# # # # torch.Size([3, 3])
-# # # # torch.Size([3, 3])
-# # # # torch.Size([3])
-# # #
-# # # print(centers.shape)
-# # # print(sizes.shape)
-# # # print(angles.shape)
-# # corner3d_torch = center_to_corner_box3d_torch(centers, sizes, angles)
-# # print(corner3d_torch)
-#
-# # from visualization.vis_utils import center_to_corner_box3d
-# from visualization.test import draw_box
-#
-# import matplotlib.pyplot as plt
-#
-# obj_points = d['point_cloud']
-# x = obj_points[:, 0]
-# y = obj_points[:, 1]
-# z = obj_points[:, 2]
-# fig = plt.figure(figsize=(8, 8))
-# ax = fig.add_subplot(111, projection='3d')
-# ax.scatter(x, y, z)
-# draw_box(ax, d['box3d_center'], box_size, heading_angle)
-# plt.show()
-#
-# #
-# dataloader = DataLoader(dataset, batch_size=32, shuffle=True)

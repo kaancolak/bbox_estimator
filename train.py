@@ -1,22 +1,20 @@
-from models.bbox_estimator import FrustumPointNetv1
-# from models.bbox_estimator_v2 import FrustumPointNetv2
-from dataset.pointcloud_dataset import PointCloudDataset
-from loss.iou_loss import compute_ciou_loss
-from torch.utils.data import Dataset, DataLoader
-import torch
-import torch.nn as nn
-import torch.optim as optim
-from torch.utils.data import random_split
-from tqdm import tqdm
-from timeit import default_timer as timer
-
 import os
+import torch
+import torch.optim as optim
+from torch.utils.data import DataLoader
+from tqdm import tqdm
 
+from models.bbox_estimator_pointnet import BoxEstimatorPointNet
+from models.bbox_estimator_pointnet2 import BoxEstimatorPointNetPlusPlus
+from dataset.pointcloud_dataset import PointCloudDataset
+
+# Ensure CUDA launch blocking for debugging
 os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
 
 
-def test_one_epoch(model, loader):
-    test_losses = {
+def evaluate_model(model, dataloader):
+    """Evaluates the model on the provided dataloader."""
+    losses = {
         'total_loss': 0.0,
         'heading_class_loss': 0.0,
         'size_class_loss': 0.0,
@@ -25,77 +23,36 @@ def test_one_epoch(model, loader):
         'stage1_center_loss': 0.0,
         'corners_loss': 0.0
     }
-
-    test_metrics = {
+    metrics = {
         'iou2d': 0.0,
         'iou3d': 0.0,
         'iou3d_0.7': 0.0,
     }
 
-    n_batches = 0
-    for i, data_dicts in tqdm(enumerate(loader), \
-                              total=len(loader), smoothing=0.9):
-        n_batches += 1
+    model.eval()
+    n_batches = len(dataloader)
 
-        data_dicts_var = {key: value.cuda() for key, value in data_dicts.items()}
-        model = model.eval()
+    with torch.no_grad():
+        for data_dicts in tqdm(dataloader, total=n_batches, smoothing=0.9):
+            data_dicts = {key: value.cuda() for key, value in data_dicts.items()}
+            batch_losses, batch_metrics = model(data_dicts)
 
-        with torch.no_grad():
-            losses, metrics = model(data_dicts_var)
+            for key in losses:
+                if key in batch_losses:
+                    losses[key] += batch_losses[key].item()
+            for key in metrics:
+                if key in batch_metrics:
+                    metrics[key] += batch_metrics[key]
 
-        for key in test_losses.keys():
-            if key in losses.keys():
-                test_losses[key] += losses[key].detach().item()
-        for key in test_metrics.keys():
-            if key in metrics.keys():
-                test_metrics[key] += metrics[key]
+    losses = {key: val / n_batches for key, val in losses.items()}
+    metrics = {key: val / n_batches for key, val in metrics.items()}
 
-    for key in test_losses.keys():
-        test_losses[key] /= n_batches
-    for key in test_metrics.keys():
-        test_metrics[key] /= n_batches
-
-    return test_losses, test_metrics
+    return losses, metrics
 
 
-def weights_init_he(m):
-    if isinstance(m, nn.Conv1d) or isinstance(m, nn.Linear):
-        nn.init.kaiming_normal_(m.weight, nonlinearity='relu')
-        if m.bias is not None:
-            nn.init.constant_(m.bias, 0)
-
-
-classes = ['car', 'truck', 'bus', 'trailer']
-# classes = ['car', 'truck', 'bus']
-# classes = ['car']
-# # classes = ['car', 'pedestrian', 'truck', 'bus', 'trailer', 'motorcycle', 'bicycle']
-model = FrustumPointNetv1(len(classes))
-model.to('cuda')
-# model.apply(weights_init_he)
-
-datadir = "/home/kaan/datas/"
-dataset_train = PointCloudDataset(datadir, classes, min_points=10, train=True, augment_data=False, use_mirror=False,
-                                  use_shift=False)
-train_dataloader = DataLoader(dataset_train, batch_size=64, shuffle=True)
-
-dataset_test = PointCloudDataset(datadir, classes, min_points=10, train=False, augment_data=False)
-test_dataloader = DataLoader(dataset_test, batch_size=64, shuffle=True)
-
-max_epochs = 200
-
-optimizer = torch.optim.Adam(
-    model.parameters(), lr=0.0001,
-    betas=(0.9, 0.999), eps=1e-08,
-    weight_decay=0.0001)
-
-scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.7)
-
-best_iou3d_70 = 0.0
-best_epoch = 1
-best_file = ''
-
-for epoch in range(max_epochs):
-    train_losses = {
+def train_model(model, dataloader, optimizer):
+    """Trains the model for one epoch on the provided dataloader."""
+    losses = {
         'total_loss': 0.0,
         'heading_class_loss': 0.0,
         'size_class_loss': 0.0,
@@ -104,69 +61,95 @@ for epoch in range(max_epochs):
         'stage1_center_loss': 0.0,
         'corners_loss': 0.0
     }
-    train_metrics = {
+    metrics = {
         'iou2d': 0.0,
         'iou3d': 0.0,
         'iou3d_0.7': 0.0,
     }
-    n_batches = 0
 
-    for batch_idx, (data) in tqdm(enumerate(train_dataloader), total=len(train_dataloader), smoothing=0.9):
-        # start = timer()
-        n_batches += 1
-        data_dicts_var = {key: value.cuda() for key, value in data.items()}
+    model.train()
+    n_batches = len(dataloader)
 
-        model = model.train()
+    for data in tqdm(dataloader, total=n_batches, smoothing=0.9):
+        data = {key: value.cuda() for key, value in data.items()}
+
         optimizer.zero_grad()
-        losses, metrics = model(data_dicts_var)
-
-        total_loss = losses['total_loss']
-        # total_loss = total_loss.mean()
-        total_loss.backward()
+        batch_losses, batch_metrics = model(data)
+        batch_losses['total_loss'].backward()
         optimizer.step()
 
-        for key in train_losses.keys():
-            if key in losses.keys():
-                train_losses[key] += losses[key].detach().item()
-        for key in train_metrics.keys():
-            if key in metrics.keys():
-                train_metrics[key] += metrics[key]
+        for key in losses:
+            if key in batch_losses:
+                losses[key] += batch_losses[key].item()
+        for key in metrics:
+            if key in batch_metrics:
+                metrics[key] += batch_metrics[key]
 
-    scheduler.step()
-    for key in train_losses.keys():
-        train_losses[key] /= n_batches
-    for key in train_metrics.keys():
-        train_metrics[key] /= n_batches
+    losses = {key: val / n_batches for key, val in losses.items()}
+    metrics = {key: val / n_batches for key, val in metrics.items()}
 
-    test_losses, test_metrics = test_one_epoch(model, test_dataloader)
+    return losses, metrics
 
-    print("Test metrics:")
-    for key, value in test_metrics.items():
-        print(f"{key}: {value}")
 
-    print("Best_iou3d_70")
-    print(best_iou3d_70)
+def save_best_model(model, optimizer, epoch, metrics, best_metrics, save_dir):
+    """Saves the model if the current metrics are the best seen so far."""
+    os.makedirs(save_dir, exist_ok=True)
+    save_path = os.path.join(save_dir, f'acc{metrics["iou3d_0.7"]:.3f}-epoch{epoch:03d}.pth')
 
-    print(scheduler.get_last_lr())
+    if os.path.exists(best_metrics['file']):
+        os.remove(best_metrics['file'])
+    best_metrics['file'] = save_path
 
-    if test_metrics['iou3d_0.7'] >= best_iou3d_70:
-        best_iou3d_70 = test_metrics['iou3d_0.7']
-        best_epoch = epoch + 1
+    state = {
+        'epoch': epoch,
+        'model_state_dict': model.state_dict(),
+        'optimizer_state_dict': optimizer.state_dict(),
+        'metrics': metrics,
+    }
+    torch.save(state, save_path)
 
-        directory = '/home/kaan/projects/bbox_estimator/weights'
-        savepath = directory + '/acc%.3f-epoch%03d.pth' % \
-                   (test_metrics['iou3d_0.7'], epoch)
 
-        if os.path.exists(best_file):
-            os.remove(best_file)  # update to newest best epoch
-        best_file = savepath
-        state = {
-            'epoch': epoch + 1,
-            'train_iou3d_0.7': train_metrics['iou3d_0.7'],
-            'test_iou3d_0.7': test_metrics['iou3d_0.7'],
-            'model_state_dict': model.state_dict(),
-            'optimizer_state_dict': optimizer.state_dict(),
-        }
-        torch.save(state, savepath)
+def main():
+    # Define model and classes
+    classes = ['car', 'truck', 'bus', 'trailer']
+    # model = BoxEstimatorPointNetPlusPlus(len(classes)).cuda()
+    model = BoxEstimatorPointNet(len(classes)).cuda()
 
-    print(f"Epoch {epoch} Train Loss: {train_losses} \nTrain Metrics: {train_metrics}")
+    # Load datasets and dataloaders
+    data_dir = "/home/kaan/datas/"
+    train_dataset = PointCloudDataset(data_dir, classes, min_points=8000, train=True, augment_data=False,
+                                      use_mirror=False, use_shift=False)
+    train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
+
+    test_dataset = PointCloudDataset(data_dir, classes, min_points=8000, train=False, augment_data=False)
+    test_loader = DataLoader(test_dataset, batch_size=64, shuffle=False)
+
+    # Define training parameters
+    max_epochs = 200
+    optimizer = optim.Adam(model.parameters(), lr=0.0001, betas=(0.9, 0.999), eps=1e-08, weight_decay=0.0001)
+    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.7)
+
+    best_metrics = {'iou3d_0.7': 0.0, 'file': ''}
+
+    # Training loop
+    for epoch in range(1, max_epochs + 1):
+        train_losses, train_metrics = train_model(model, train_loader, optimizer)
+        scheduler.step()
+
+        test_losses, test_metrics = evaluate_model(model, test_loader)
+
+        print(f"Epoch {epoch}/{max_epochs}")
+        print(f"Train Losses: {train_losses}")
+        print(f"Train Metrics: {train_metrics}")
+        print(f"Test Metrics: {test_metrics}")
+        print(f"Current Best IoU3D_0.7: {best_metrics['iou3d_0.7']}")
+        print(f"Current Learning Rate: {scheduler.get_last_lr()[0]}")
+
+        if test_metrics['iou3d_0.7'] > best_metrics['iou3d_0.7']:
+            best_metrics['iou3d_0.7'] = test_metrics['iou3d_0.7']
+            save_best_model(model, optimizer, epoch, test_metrics, best_metrics,
+                            save_dir='/home/kaan/projects/bbox_estimator/weights')
+
+
+if __name__ == "__main__":
+    main()
