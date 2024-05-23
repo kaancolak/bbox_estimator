@@ -117,11 +117,11 @@ def main():
 
     # Load datasets and dataloaders
     data_dir = "/home/kaan/datas/"
-    train_dataset = PointCloudDataset(data_dir, classes, min_points=8000, train=True, augment_data=False,
+    train_dataset = PointCloudDataset(data_dir, classes, min_points=10, train=True, augment_data=False,
                                       use_mirror=False, use_shift=False)
     train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
 
-    test_dataset = PointCloudDataset(data_dir, classes, min_points=8000, train=False, augment_data=False)
+    test_dataset = PointCloudDataset(data_dir, classes, min_points=10, train=False, augment_data=False)
     test_loader = DataLoader(test_dataset, batch_size=64, shuffle=False)
 
     # Define training parameters

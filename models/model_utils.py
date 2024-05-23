@@ -9,44 +9,30 @@ from dataset.pointcloud_dataset import g_mean_size_arr
 
 
 def parse_output_to_tensors(box_pred, stage1_center):
-    '''
-    :param box_pred: (bs,59)
-    :param logits: (bs,1024,2)
-    :param mask: (bs,1024)
-    :param stage1_center: (bs,3)
-    :return:
-        center_boxnet:(bs,3)
-        heading_scores:(bs,12)
-        heading_residual_normalized:(bs,12),-1 to 1
-        heading_residual:(bs,12)
-        size_scores:(bs,8)
-        size_residual_normalized:(bs,8)
-        size_residual:(bs,8)
-    '''
     bs = box_pred.shape[0]
     # center
-    center_boxnet = box_pred[:, :3]  # 0:3
+    center_boxnet = box_pred[:, :3]
     c = 3
 
     # heading
-    heading_scores = box_pred[:, c:c + NUM_HEADING_BIN]  # 3:3+12
+    heading_scores = box_pred[:, c:c + NUM_HEADING_BIN]
     c += NUM_HEADING_BIN
     heading_residual_normalized = \
-        box_pred[:, c:c + NUM_HEADING_BIN]  # 3+12 : 3+2*12
+        box_pred[:, c:c + NUM_HEADING_BIN]
     heading_residual = \
         heading_residual_normalized * (np.pi / NUM_HEADING_BIN)
     c += NUM_HEADING_BIN
 
     # size
-    size_scores = box_pred[:, c:c + NUM_SIZE_CLUSTER]  # 3+2*12 : 3+2*12+4
+    size_scores = box_pred[:, c:c + NUM_SIZE_CLUSTER]
 
     c += 4
     size_residual_normalized = \
-        box_pred[:, c:c + 3 * NUM_SIZE_CLUSTER].contiguous()  # [32,24] 3+2*12+4 : 3+2*12+3*4
+        box_pred[:, c:c + 3 * NUM_SIZE_CLUSTER].contiguous()
     c += 3 * NUM_SIZE_CLUSTER
 
     size_residual_normalized = \
-        size_residual_normalized.view(bs, NUM_SIZE_CLUSTER, 3)  # [32,8,3]
+        size_residual_normalized.view(bs, NUM_SIZE_CLUSTER, 3)
 
     size_residual = size_residual_normalized * \
                     torch.from_numpy(g_mean_size_arr).unsqueeze(0).repeat(bs, 1, 1).cuda()
@@ -73,24 +59,22 @@ def get_box3d_corners(center, heading_residual, size_residual):
     """
     bs = center.shape[0]
     heading_bin_centers = torch.from_numpy( \
-        np.arange(0, 2 * np.pi, 2 * np.pi / NUM_HEADING_BIN)).float()  # (12,) (NH,)
+        np.arange(0, 2 * np.pi, 2 * np.pi / NUM_HEADING_BIN)).float()
 
-    headings = heading_residual + heading_bin_centers.view(1, -1).cuda()  # (bs,12)
+    headings = heading_residual + heading_bin_centers.view(1, -1).cuda()
 
     mean_sizes = torch.from_numpy(g_mean_size_arr).float().view(1, NUM_SIZE_CLUSTER, 3).cuda() \
-                 + size_residual.cuda()  # (1,8,3)+(bs,8,3) = (bs,8,3)
-    sizes = mean_sizes + size_residual  # (bs,8,3)
+                 + size_residual.cuda()
+    sizes = mean_sizes + size_residual
     sizes = sizes.view(bs, 1, NUM_SIZE_CLUSTER, 3) \
-        .repeat(1, NUM_HEADING_BIN, 1, 1).float()  # (B,12,8,3)
-    headings = headings.view(bs, NUM_HEADING_BIN, 1).repeat(1, 1, NUM_SIZE_CLUSTER)  # (bs,12,8)
-    centers = center.view(bs, 1, 1, 3).repeat(1, NUM_HEADING_BIN, NUM_SIZE_CLUSTER, 1)  # (bs,12,8,3)
+        .repeat(1, NUM_HEADING_BIN, 1, 1).float()
+    headings = headings.view(bs, NUM_HEADING_BIN, 1).repeat(1, 1, NUM_SIZE_CLUSTER)
+    centers = center.view(bs, 1, 1, 3).repeat(1, NUM_HEADING_BIN, NUM_SIZE_CLUSTER, 1)
     N = bs * NUM_HEADING_BIN * NUM_SIZE_CLUSTER
-    ###ipdb.set_trace()
 
     corners_3d = center_to_corner_box3d_torch(centers.view(N, 3), sizes.view(N, 3), headings.view(N))
 
-    ###ipdb.set_trace()
-    return corners_3d.view(bs, NUM_HEADING_BIN, NUM_SIZE_CLUSTER, 8, 3)  # [32, 12, 8, 8, 3]
+    return corners_3d.view(bs, NUM_HEADING_BIN, NUM_SIZE_CLUSTER, 8, 3)
 
 
 def huber_loss(error, delta=1.0):  # (32,), ()
@@ -107,33 +91,6 @@ class FrustumPointNetLoss(nn.Module):
 
     def forward(self, center, stage1_center, pred_parsed, gt,
                 corner_loss_weight=10.0, box_loss_weight=1.0):
-        '''
-        1.InsSeg
-        logits: torch.Size([32, 1024, 2]) torch.float32
-        mask_label: [32, 1024]
-        2.Center
-        center: torch.Size([32, 3]) torch.float32
-        stage1_center: torch.Size([32, 3]) torch.float32
-        center_label:[32,3]
-        3.Heading
-        heading_scores: torch.Size([32, 12]) torch.float32
-        heading_residual_snormalized: torch.Size([32, 12]) torch.float32
-        heading_residual: torch.Size([32, 12]) torch.float32
-        heading_class_label:(32)
-        heading_residual_label:(32)
-        4.Size
-        size_scores: torch.Size([32, 8]) torch.float32
-        size_residual_normalized: torch.Size([32, 8, 3]) torch.float32
-        size_residual: torch.Size([32, 8, 3]) torch.float32
-        size_class_label:(32)
-        size_residual_label:(32,3)
-        5.Corner
-        6.Weight
-        corner_loss_weight: float scalar
-        box_loss_weight: float scalar
-
-        '''
-
         heading_scores = pred_parsed['heading_scores']
         heading_residual_normalized = pred_parsed['heading_residual_normalized']
         heading_residual = pred_parsed['heading_residual']
@@ -150,67 +107,66 @@ class FrustumPointNetLoss(nn.Module):
         bs = center.shape[0]
 
         # Center Regression Loss
-        center_dist = torch.norm(center - center_label, dim=1)  # (32,)
+        center_dist = torch.norm(center - center_label, dim=1)
         center_loss = huber_loss(center_dist, delta=2.0)
 
-        stage1_center_dist = torch.norm(center - stage1_center, dim=1)  # (32,)
+        stage1_center_dist = torch.norm(center - stage1_center, dim=1)
         stage1_center_loss = huber_loss(stage1_center_dist, delta=1.0)
 
         # Heading Loss
         heading_class_loss = F.nll_loss(F.log_softmax(heading_scores, dim=1), \
-                                        heading_class_label.long())  # tensor(2.4505, grad_fn=<NllLossBackward>)
-        hcls_onehot = torch.eye(NUM_HEADING_BIN)[heading_class_label.long().cpu()].cuda()  # 32,12
+                                        heading_class_label.long())
+        hcls_onehot = torch.eye(NUM_HEADING_BIN)[heading_class_label.long().cpu()].cuda()
         heading_residual_normalized_label = \
-            heading_residual_label / (np.pi / NUM_HEADING_BIN)  # 32,
+            heading_residual_label / (np.pi / NUM_HEADING_BIN)
         heading_residual_normalized_dist = torch.sum( \
-            heading_residual_normalized * hcls_onehot.float(), dim=1)  # 32,
-        ### Only compute reg loss on gt label
+            heading_residual_normalized * hcls_onehot.float(), dim=1)
+
         heading_residual_normalized_loss = \
             huber_loss(heading_residual_normalized_dist -
-                       heading_residual_normalized_label, delta=1.0)  ###fix,2020.1.14
+                       heading_residual_normalized_label, delta=1.0)
 
         # Size loss
         size_class_loss = F.nll_loss(F.log_softmax(size_scores, dim=1), \
-                                     size_class_label.long())  # tensor(2.0240, grad_fn=<NllLossBackward>)
+                                     size_class_label.long())
 
-        scls_onehot = torch.eye(NUM_SIZE_CLUSTER)[size_class_label.long().cpu()].cuda()  # 32,8
-        scls_onehot_repeat = scls_onehot.view(-1, NUM_SIZE_CLUSTER, 1).repeat(1, 1, 3)  # 32,8,3
+        scls_onehot = torch.eye(NUM_SIZE_CLUSTER)[size_class_label.long().cpu()].cuda()
+        scls_onehot_repeat = scls_onehot.view(-1, NUM_SIZE_CLUSTER, 1).repeat(1, 1, 3)
         predicted_size_residual_normalized_dist = torch.sum( \
-            size_residual_normalized * scls_onehot_repeat.cuda(), dim=1)  # 32,3
+            size_residual_normalized * scls_onehot_repeat.cuda(), dim=1)
         mean_size_arr_expand = torch.from_numpy(g_mean_size_arr).float().cuda() \
             .view(1, NUM_SIZE_CLUSTER, 3)  # 1,8,3
-        mean_size_label = torch.sum(scls_onehot_repeat * mean_size_arr_expand, dim=1)  # 32,3
+        mean_size_label = torch.sum(scls_onehot_repeat * mean_size_arr_expand, dim=1)
         size_residual_label_normalized = size_residual_label / mean_size_label.cuda()
 
         size_normalized_dist = torch.norm(size_residual_label_normalized - \
-                                          predicted_size_residual_normalized_dist, dim=1)  # 32
+                                          predicted_size_residual_normalized_dist, dim=1)
         size_residual_normalized_loss = huber_loss(size_normalized_dist,
-                                                   delta=1.0)  # tensor(11.2784, grad_fn=<MeanBackward0>)
+                                                   delta=1.0)
 
         # Corner Loss
         corners_3d = get_box3d_corners(center, \
-                                       heading_residual, size_residual).cuda()  # (bs,NH,NS,8,3)(32, 12, 8, 8, 3)
+                                       heading_residual, size_residual).cuda()
         gt_mask = hcls_onehot.view(bs, NUM_HEADING_BIN, 1).repeat(1, 1, NUM_SIZE_CLUSTER) * \
-                  scls_onehot.view(bs, 1, NUM_SIZE_CLUSTER).repeat(1, NUM_HEADING_BIN, 1)  # (bs,NH=12,NS=8)
+                  scls_onehot.view(bs, 1, NUM_SIZE_CLUSTER).repeat(1, NUM_HEADING_BIN, 1)
         corners_3d_pred = torch.sum( \
             gt_mask.view(bs, NUM_HEADING_BIN, NUM_SIZE_CLUSTER, 1, 1) \
             .float().cuda() * corners_3d, \
             dim=[1, 2])  # (bs,8,3)
         heading_bin_centers = torch.from_numpy( \
-            np.arange(0, 2 * np.pi, 2 * np.pi / NUM_HEADING_BIN)).float().cuda()  # (NH,)
+            np.arange(0, 2 * np.pi, 2 * np.pi / NUM_HEADING_BIN)).float().cuda()
         heading_label = heading_residual_label.view(bs, 1) + \
-                        heading_bin_centers.view(1, NUM_HEADING_BIN)  # (bs,1)+(1,NH)=(bs,NH)
+                        heading_bin_centers.view(1, NUM_HEADING_BIN)
 
         heading_label = torch.sum(hcls_onehot.float() * heading_label, 1)
         mean_sizes = torch.from_numpy(g_mean_size_arr) \
-            .float().view(1, NUM_SIZE_CLUSTER, 3).cuda()  # (1,NS,3)
+            .float().view(1, NUM_SIZE_CLUSTER, 3).cuda()
         size_label = mean_sizes + \
-                     size_residual_label.view(bs, 1, 3)  # (1,NS,3)+(bs,1,3)=(bs,NS,3)
-        size_label = torch.sum( \
-            scls_onehot.view(bs, NUM_SIZE_CLUSTER, 1).float() * size_label, axis=[1])  # (B,3)
+                     size_residual_label.view(bs, 1, 3)
+        size_label = torch.sum(scls_onehot.view(bs, NUM_SIZE_CLUSTER, 1).float() * size_label, axis=[1])
 
-        corners_3d_gt = center_to_corner_box3d_torch(center_label, size_label, heading_label)  # (B,8,3)
-        corners_3d_gt_flip = center_to_corner_box3d_torch(center_label, size_label, heading_label + np.pi)  # (B,8,3)
+        corners_3d_gt = center_to_corner_box3d_torch(center_label, size_label, heading_label)
+        corners_3d_gt_flip = center_to_corner_box3d_torch(center_label, size_label, heading_label + np.pi)
 
         corners_dist = torch.min(torch.norm(corners_3d_pred - corners_3d_gt, dim=-1),
                                  torch.norm(corners_3d_pred - corners_3d_gt_flip, dim=-1))
@@ -223,10 +179,7 @@ class FrustumPointNetLoss(nn.Module):
                                         size_residual_normalized_loss * 20 + \
                                         stage1_center_loss + \
                                         corner_loss_weight * corners_loss)
-        ###total_loss = mask_loss
-        # tensor(306.7591, grad_fn=<AddBackward0>)
-        ###if np.isnan(total_loss.item()) or total_loss > 10000.0:
-        ###    ipdb.set_trace()
+
         losses = {
             'total_loss': total_loss,
             'heading_class_loss': box_loss_weight * heading_class_loss,
