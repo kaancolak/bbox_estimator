@@ -34,18 +34,18 @@ class PointNetEstimationV2(nn.Module):
         '''
         super(PointNetEstimationV2, self).__init__()
 
-        self.sa1 = PointNetSetAbstraction(128, 0.1, 32, in_channel=3, mlp=[32, 32, 64], group_all=False)
-        self.sa2 = PointNetSetAbstraction(32, 0.2, 32, in_channel=64 + 3, mlp=[64, 64, 128], group_all=False)
-        self.sa3 = PointNetSetAbstraction(npoint=None, radius=None, nsample=None, in_channel=128 + 3,
-                                          mlp=[128, 128, 256], group_all=True)
+        self.sa1 = PointNetSetAbstraction(128, 0.2, 64, in_channel=3, mlp=[64, 64, 128], group_all=False)
+        self.sa2 = PointNetSetAbstraction(32, 0.4, 64, in_channel=128 + 3, mlp=[128, 128, 256], group_all=False)
+        self.sa3 = PointNetSetAbstraction(npoint=None, radius=None, nsample=None, in_channel=256 + 3,
+                                          mlp=[256, 256, 512], group_all=True)
 
-        self.fc1 = nn.Linear(256 + n_classes, 256)
-        self.bn1 = nn.BatchNorm1d(256)
+        self.fc1 = nn.Linear(512 + n_classes, 512)
+        self.bn1 = nn.BatchNorm1d(512)
         self.drop1 = nn.Dropout(0.5)
-        self.fc2 = nn.Linear(256, 128)
-        self.bn2 = nn.BatchNorm1d(128)
+        self.fc2 = nn.Linear(512, 256)
+        self.bn2 = nn.BatchNorm1d(256)
         self.drop2 = nn.Dropout(0.5)
-        self.fc3 = nn.Linear(128, 3 + NUM_HEADING_BIN * 2 + NUM_SIZE_CLUSTER * 4)
+        self.fc3 = nn.Linear(256, 3 + NUM_HEADING_BIN * 2 + NUM_SIZE_CLUSTER * 4)
 
     def forward(self, pts, one_hot_vec):  # bs,3,m
         '''

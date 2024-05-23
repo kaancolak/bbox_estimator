@@ -1,5 +1,5 @@
-# from models.bbox_estimator import FrustumPointNetv1
-from models.bbox_estimator_v2 import FrustumPointNetv2
+from models.bbox_estimator import FrustumPointNetv1
+# from models.bbox_estimator_v2 import FrustumPointNetv2
 from dataset.pointcloud_dataset import PointCloudDataset
 from loss.iou_loss import compute_ciou_loss
 from torch.utils.data import Dataset, DataLoader
@@ -69,26 +69,26 @@ classes = ['car', 'truck', 'bus', 'trailer']
 # classes = ['car', 'truck', 'bus']
 # classes = ['car']
 # # classes = ['car', 'pedestrian', 'truck', 'bus', 'trailer', 'motorcycle', 'bicycle']
-model = FrustumPointNetv2(len(classes))
+model = FrustumPointNetv1(len(classes))
 model.to('cuda')
 # model.apply(weights_init_he)
 
 datadir = "/home/kaan/datas/"
-dataset_train = PointCloudDataset(datadir, classes, min_points=6000, train=True, augment_data=False, use_mirror=True,
-                                  use_shift=True)
+dataset_train = PointCloudDataset(datadir, classes, min_points=10, train=True, augment_data=False, use_mirror=False,
+                                  use_shift=False)
 train_dataloader = DataLoader(dataset_train, batch_size=64, shuffle=True)
 
-dataset_test = PointCloudDataset(datadir, classes, min_points=6000, train=False, augment_data=False)
+dataset_test = PointCloudDataset(datadir, classes, min_points=10, train=False, augment_data=False)
 test_dataloader = DataLoader(dataset_test, batch_size=64, shuffle=True)
 
 max_epochs = 200
 
 optimizer = torch.optim.Adam(
-    model.parameters(), lr=0.01,
+    model.parameters(), lr=0.0001,
     betas=(0.9, 0.999), eps=1e-08,
     weight_decay=0.0001)
 
-scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.6)
+scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.7)
 
 best_iou3d_70 = 0.0
 best_epoch = 1
@@ -124,7 +124,7 @@ for epoch in range(max_epochs):
         # total_loss = total_loss.mean()
         total_loss.backward()
         optimizer.step()
-        scheduler.step()
+
         for key in train_losses.keys():
             if key in losses.keys():
                 train_losses[key] += losses[key].detach().item()
@@ -132,7 +132,7 @@ for epoch in range(max_epochs):
             if key in metrics.keys():
                 train_metrics[key] += metrics[key]
 
-
+    scheduler.step()
     for key in train_losses.keys():
         train_losses[key] /= n_batches
     for key in train_metrics.keys():
@@ -140,9 +140,11 @@ for epoch in range(max_epochs):
 
     test_losses, test_metrics = test_one_epoch(model, test_dataloader)
 
-    print("test_metrics['iou3d_0.7']")
-    print(test_metrics['iou3d_0.7'])
-    print("best_iou3d_70")
+    print("Test metrics:")
+    for key, value in test_metrics.items():
+        print(f"{key}: {value}")
+
+    print("Best_iou3d_70")
     print(best_iou3d_70)
 
     print(scheduler.get_last_lr())
