@@ -6,6 +6,7 @@ from tqdm import tqdm
 
 from models.bbox_estimator_pointnet import BoxEstimatorPointNet
 from models.bbox_estimator_pointnet2 import BoxEstimatorPointNetPlusPlus
+from models.bbox_estimator_pointnet2_cuda import BoxEstimatorPointNetPlusPlusCuda
 from dataset.pointcloud_dataset import PointCloudDataset
 
 # Ensure CUDA launch blocking for debugging
@@ -113,19 +114,25 @@ def main():
     # Define model and classes
     classes = ['car', 'truck', 'bus', 'trailer']
     # model = BoxEstimatorPointNetPlusPlus(len(classes)).cuda()
-    model = BoxEstimatorPointNet(len(classes)).cuda()
+    # model = BoxEstimatorPointNet(len(classes)).cuda()
+    model = BoxEstimatorPointNetPlusPlusCuda(len(classes)).cuda()
+
+    # weights = torch.load('/home/kaan/projects/bbox_estimator/weights/v1_min10_acc0.610-epoch049.pth')
+    # model.load_state_dict(weights['model_state_dict'], strict=False)
 
     # Load datasets and dataloaders
-    data_dir = "/home/kaan/datas/"
+
+    data_dir = "/home/kaan/dataset_custom/"
     train_dataset = PointCloudDataset(data_dir, classes, min_points=10, train=True, augment_data=False,
                                       use_mirror=False, use_shift=False)
-    train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
+    train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
 
+    data_dir_test = "/home/kaan/dataset_custom/"
     test_dataset = PointCloudDataset(data_dir, classes, min_points=10, train=False, augment_data=False)
-    test_loader = DataLoader(test_dataset, batch_size=64, shuffle=False)
+    test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
 
     # Define training parameters
-    max_epochs = 200
+    max_epochs = 100
     optimizer = optim.Adam(model.parameters(), lr=0.0001, betas=(0.9, 0.999), eps=1e-08, weight_decay=0.0001)
     scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.7)
 

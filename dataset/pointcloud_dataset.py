@@ -4,7 +4,6 @@ import torch
 import pickle
 from torch.utils.data import Dataset, DataLoader
 
-
 # -----------------
 # Global Constants
 # -----------------
@@ -48,6 +47,8 @@ class PointCloudDataset(Dataset):
         with open(db_info, 'rb') as f:
             data = pickle.load(f)
 
+        print(data.keys())
+
         self.files = []
         self.bounding_boxes = []
         self.labels = []
@@ -61,10 +62,15 @@ class PointCloudDataset(Dataset):
 
     def __getitem__(self, idx):
         point_path = self.data_dir + self.files[idx]
-        with open(point_path, 'rb') as f:
-            obj_points = np.fromfile(f, dtype=np.float32).reshape(-1, 5)
 
-        # print(obj_points.shape)
+        if self.labels[idx] in point_path:
+            with open(point_path, 'rb') as f:
+                obj_points = np.fromfile(f, dtype=np.float32).reshape(-1, 5)
+        else:
+            with open(point_path, 'rb') as f:
+                obj_points = np.fromfile(f, dtype=np.float32).reshape(-1, 3)
+
+        obj_points = obj_points[:, :3]
         obj_points = self.pad_or_sample_points(obj_points, self.num_points)
         obj_points[:, :3] += self.bounding_boxes[idx][:3]  # normalized to real position
 
@@ -93,7 +99,7 @@ class PointCloudDataset(Dataset):
         size_class, residual = self.size2class(box_size, self.labels[idx])
         yaw = bounding_box[6]
         angle_class, angle_residual = self.angle2class(yaw,
-                                                  NUM_HEADING_BIN)
+                                                       NUM_HEADING_BIN)
         data = {
             'point_cloud': torch.tensor(obj_points, dtype=torch.float32),
             'one_hot': one_hot_vector,
