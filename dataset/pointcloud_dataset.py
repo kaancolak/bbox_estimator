@@ -47,7 +47,7 @@ class PointCloudDataset(Dataset):
         with open(db_info, 'rb') as f:
             data = pickle.load(f)
 
-        print(data.keys())
+
 
         self.files = []
         self.bounding_boxes = []
@@ -89,6 +89,8 @@ class PointCloudDataset(Dataset):
 
             if self.use_shift:
                 obj_points, bounding_box = self.random_shift_point_cloud(obj_points, bounding_box, [20, 5])
+
+            obj_points, bounding_box = self.rotate_point_cloud(obj_points, bounding_box)
 
         one_hot_vector = torch.zeros(len(self.classes))
         ind = self.classes.index(self.labels[idx])
@@ -185,8 +187,32 @@ class PointCloudDataset(Dataset):
         shift_x = np.random.uniform(-shift_range[0], shift_range[0])
         shift_y = np.random.uniform(-shift_range[1], shift_range[1])
 
-        shifted_point_cloud = point_cloud + np.array([shift_x, shift_y, 0, 0, 0])
+
+        if point_cloud.shape == (512, 3):
+            shifted_point_cloud = point_cloud + np.array([shift_x, shift_y, 0])
+        else:
+            shifted_point_cloud = point_cloud + np.array([shift_x, shift_y, 0, 0, 0])
         shifted_label = label.copy()
         shifted_label[:2] += np.array([shift_x, shift_y])  # Shift the center of the bounding box
 
         return shifted_point_cloud, shifted_label
+
+    def rotate_point_cloud(self, point_cloud, label, min_angle=-np.pi / 2, max_angle=np.pi / 2):
+        angle = np.random.uniform(min_angle, max_angle)
+
+        # Rotate the point cloud
+        rotation_matrix = np.array([
+            [np.cos(angle), -np.sin(angle), 0],
+            [np.sin(angle), np.cos(angle), 0],
+            [0, 0, 1]
+        ])
+        rotated_point_cloud = np.dot(point_cloud, rotation_matrix.T)
+
+        # Rotate the bounding box center
+        label[:3] = np.dot(rotation_matrix, label[:3])
+
+
+        label[6] = label[6] + angle
+
+
+        return rotated_point_cloud, label
