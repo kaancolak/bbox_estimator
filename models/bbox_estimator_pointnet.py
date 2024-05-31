@@ -30,7 +30,7 @@ class PointNetBoxEstimation(nn.Module):
         self.fc1 = nn.Linear(512 + self.n_classes, 512)
         self.fc2 = nn.Linear(512, 256)
 
-        self.fc3 = nn.Linear(256, 3 + NUM_HEADING_BIN * 2 + NUM_SIZE_CLUSTER * 4)
+        self.fc3 = nn.Linear(256, 3 + 2 + 3)
         self.fcbn1 = nn.BatchNorm1d(512)
         self.fcbn2 = nn.BatchNorm1d(256)
 
@@ -50,6 +50,7 @@ class PointNetBoxEstimation(nn.Module):
         x = F.relu(self.fcbn1(self.fc1(expand_global_feat)))
         x = F.relu(self.fcbn2(self.fc2(x)))
         box_pred = self.fc3(x)
+
         return box_pred
 
 

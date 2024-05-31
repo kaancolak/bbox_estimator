@@ -17,10 +17,8 @@ def evaluate_model(model, dataloader):
     """Evaluates the model on the provided dataloader."""
     losses = {
         'total_loss': 0.0,
-        'heading_class_loss': 0.0,
-        'size_class_loss': 0.0,
-        'heading_residual_normalized_loss': 0.0,
-        'size_residual_normalized_loss': 0.0,
+        'heading_loss': 0.0,
+        'size_loss': 0.0,
         'stage1_center_loss': 0.0,
         'corners_loss': 0.0
     }
@@ -55,10 +53,8 @@ def train_model(model, dataloader, optimizer):
     """Trains the model for one epoch on the provided dataloader."""
     losses = {
         'total_loss': 0.0,
-        'heading_class_loss': 0.0,
-        'size_class_loss': 0.0,
-        'heading_residual_normalized_loss': 0.0,
-        'size_residual_normalized_loss': 0.0,
+        'heading_loss': 0.0,
+        'size_loss': 0.0,
         'stage1_center_loss': 0.0,
         'corners_loss': 0.0
     }
@@ -123,12 +119,12 @@ def main():
     # Load datasets and dataloaders
 
     data_dir = "/home/kaan/dataset_custom/"
-    train_dataset = PointCloudDataset(data_dir, classes, min_points=10, train=True, augment_data=False,
+    train_dataset = PointCloudDataset(data_dir, classes, min_points=5000, train=True, augment_data=False,
                                       use_mirror=False, use_shift=False)
     train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
 
     data_dir_test = "/home/kaan/dataset_custom/"
-    test_dataset = PointCloudDataset(data_dir, classes, min_points=10, train=False, augment_data=False)
+    test_dataset = PointCloudDataset(data_dir, classes, min_points=5000, train=False, augment_data=False)
     test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
 
     # Define training parameters
@@ -155,7 +151,7 @@ def main():
         if test_metrics['iou3d_0.7'] > best_metrics['iou3d_0.7']:
             best_metrics['iou3d_0.7'] = test_metrics['iou3d_0.7']
             save_best_model(model, optimizer, epoch, test_metrics, best_metrics,
-                            save_dir='/home/kaan/projects/bbox_estimator/weights')
+                            save_dir='/home/kaan/projects/bbox_estimator/weights/centerpoint_like_head')
 
 
 if __name__ == "__main__":

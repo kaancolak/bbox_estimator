@@ -224,46 +224,44 @@ def compute_box3d_iou(center_pred,
         iou3ds: (B,) 3d box ious
     '''
 
+
+
+    sin_yaw_pred = pred['sin_yaw'].detach().cpu().numpy()
+    cos_yaw_pred = pred['cos_yaw'].detach().cpu().numpy()
+    size_pred = pred['sizes'].detach().cpu().numpy()
     center_pred = center_pred.detach().cpu().numpy()
 
-    heading_logits = pred['heading_scores'].detach().cpu().numpy()
-    heading_residual = pred['heading_residual'].detach().cpu().numpy()
-    size_logits = pred['size_scores'].detach().cpu().numpy()
-    size_residual = pred['size_residual'].detach().cpu().numpy()
+    sin_yaw_gt = gt['sin_yaw'].detach().cpu().numpy()
+    cos_yaw_gt = gt['cos_yaw'].detach().cpu().numpy()
+    size_gt = gt['box_size'].detach().cpu().numpy()
+    center_gt = gt['box3d_center'].detach().cpu().numpy()
 
-    center_label = gt['box3d_center'].detach().cpu().numpy()
-    heading_class_label = gt['angle_class'].detach().cpu().numpy()
-    heading_residual_label = gt['angle_residual'].detach().cpu().numpy()
-    size_class_label = gt['size_class'].detach().cpu().numpy()
-    size_residual_label = gt['size_residual'].detach().cpu().numpy()
 
-    batch_size = heading_logits.shape[0]
-    heading_class = np.argmax(heading_logits, 1)  # B
-    heading_residual = np.array([heading_residual[i, heading_class[i]] \
-                                 for i in range(batch_size)])  # B,
-    size_class = np.argmax(size_logits, 1)  # B
-    size_residual = np.vstack([size_residual[i, size_class[i], :] \
-                               for i in range(batch_size)])
+
+    batch_size = sin_yaw_gt.shape[0]
 
     iou2d_list = []
     iou3d_list = []
+
     for i in range(batch_size):
-        heading_angle = class2angle(heading_class[i],
-                                    heading_residual[i], NUM_HEADING_BIN)
-        box_size = class2size(size_class[i], size_residual[i])
 
-        corners_3d = center_to_corner_box3d_numpy(center_pred[i], box_size, heading_angle, )
+        yaw_angle_gt = np.arctan2(sin_yaw_gt[i], cos_yaw_gt[i])
+        yaw_angle_wrapped_gt = np.arctan2(np.sin(yaw_angle_gt), np.cos(yaw_angle_gt))
 
-        heading_angle_label = class2angle(heading_class_label[i],
-                                          heading_residual_label[i], NUM_HEADING_BIN)
-        box_size_label = class2size(size_class_label[i].item(), size_residual_label[i])
 
-        corners_3d_label = center_to_corner_box3d_numpy(center_label[i], box_size_label,
-                                                        np.squeeze(heading_angle_label), )
+        corners_3d = center_to_corner_box3d_numpy(center_gt[i], size_gt[i], yaw_angle_wrapped_gt )
 
-        iou_3d, iou_2d = box3d_iou(corners_3d, corners_3d_label)
+
+        yaw_angle_pred = np.arctan2(sin_yaw_pred[i], cos_yaw_pred[i])
+        yaw_angle_wrapped_pred = np.arctan2(np.sin(yaw_angle_pred), np.cos(yaw_angle_pred))
+
+        corners_3d_pred = center_to_corner_box3d_numpy(center_pred[i], size_pred[i], np.squeeze(yaw_angle_wrapped_pred))
+
+        iou_3d, iou_2d = box3d_iou(corners_3d, corners_3d_pred)
         iou3d_list.append(iou_3d)
         iou2d_list.append(iou_2d)
+
+
     return np.array(iou2d_list, dtype=np.float32), np.array(iou3d_list, dtype=np.float32)
 
 

@@ -100,17 +100,35 @@ class PointCloudDataset(Dataset):
         yaw = bounding_box[6]
         angle_class, angle_residual = self.angle2class(yaw,
                                                        NUM_HEADING_BIN)
+
+        sin_yaw, cos_yaw = self.yaw_to_sin_cos(yaw)
+
         data = {
             'point_cloud': torch.tensor(obj_points, dtype=torch.float32),
             'one_hot': one_hot_vector,
             'box3d_center': torch.tensor(box_center, dtype=torch.float32),
-            'size_class': torch.tensor(size_class, dtype=torch.float32),
-            'size_residual': torch.tensor(residual, dtype=torch.float32),
-            'angle_class': torch.tensor(angle_class, dtype=torch.float32),
-            'angle_residual': torch.tensor(angle_residual, dtype=torch.float32),
+            'box_size': torch.tensor(box_size, dtype=torch.float32),
+            'sin_yaw': torch.tensor(sin_yaw, dtype=torch.float32),
+            'cos_yaw': torch.tensor(cos_yaw, dtype=torch.float32),
         }
 
         return data
+
+    def yaw_to_sin_cos(self, yaw_angle):
+        """
+        Convert yaw angle to sine and cosine components and return as torch array.
+
+        Args:
+            yaw_angle: Yaw angle in radians
+
+        Returns:
+            sin_yaw: Sine component of the yaw angle
+            cos_yaw: Cosine component of the yaw angle
+        """
+        sin_yaw = np.sin(yaw_angle)
+        cos_yaw = np.cos(yaw_angle)
+        return sin_yaw, cos_yaw
+
 
     def pad_or_sample_points(self, points, num_points):
         # Padding using duplicate of the correct points, maybe alternative padding with zeros
