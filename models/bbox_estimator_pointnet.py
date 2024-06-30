@@ -129,6 +129,7 @@ class BoxEstimatorPointNet(nn.Module):
 
         metrics = {
             'iou2d': iou2ds.mean(),
+            'iou2d_0.7': np.sum(iou2ds >= 0.7) / bs,
             'iou3d': iou3ds.mean(),
             'iou3d_0.7': np.sum(iou3ds >= 0.7) / bs
         }

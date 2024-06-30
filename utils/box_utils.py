@@ -4,6 +4,136 @@ import torch
 
 from dataset.pointcloud_dataset import NUM_HEADING_BIN, NUM_SIZE_CLUSTER, NUM_OBJECT_POINT
 from dataset.pointcloud_dataset import g_class2type, g_type_mean_size
+from scipy.spatial import ConvexHull
+
+
+def polygon_clip(subjectPolygon, clipPolygon):
+    """ Clip a polygon with another polygon.
+
+    Ref: https://rosettacode.org/wiki/Sutherland-Hodgman_polygon_clipping#Python
+
+    Args:
+      subjectPolygon: a list of (x,y) 2d points, any polygon.
+      clipPolygon: a list of (x,y) 2d points, has to be *convex*
+    Note:
+      **points have to be counter-clockwise ordered**
+
+    Return:
+      a list of (x,y) vertex point for the intersection polygon.
+    """
+
+    def inside(p):
+        return (cp2[0] - cp1[0]) * (p[1] - cp1[1]) > (cp2[1] - cp1[1]) * (p[0] - cp1[0])
+
+    def computeIntersection():
+        dc = [cp1[0] - cp2[0], cp1[1] - cp2[1]]
+        dp = [s[0] - e[0], s[1] - e[1]]
+        n1 = cp1[0] * cp2[1] - cp1[1] * cp2[0]
+        n2 = s[0] * e[1] - s[1] * e[0]
+        n3 = 1.0 / (dc[0] * dp[1] - dc[1] * dp[0])
+        return [(n1 * dp[0] - n2 * dc[0]) * n3, (n1 * dp[1] - n2 * dc[1]) * n3]
+
+    outputList = subjectPolygon
+    cp1 = clipPolygon[-1]
+
+    for clipVertex in clipPolygon:
+        cp2 = clipVertex
+        inputList = outputList
+        outputList = []
+        s = inputList[-1]
+
+        for subjectVertex in inputList:
+            e = subjectVertex
+            if inside(e):
+                if not inside(s):
+                    outputList.append(computeIntersection())
+                outputList.append(e)
+            elif inside(s):
+                outputList.append(computeIntersection())
+            s = e
+        cp1 = cp2
+        if len(outputList) == 0:
+            return None
+    return (outputList)
+
+
+def poly_area(x, y):
+    """ Ref: http://stackoverflow.com/questions/24467972/calculate-area-of-polygon-given-x-y-coordinates """
+    return 0.5 * np.abs(np.dot(x, np.roll(y, 1)) - np.dot(y, np.roll(x, 1)))
+def convex_hull_intersection(p1, p2):
+    """ Compute area of two convex hull's intersection area.
+        p1,p2 are a list of (x,y) tuples of hull vertices.
+        return a list of (x,y) for the intersection and its volume
+    """
+    inter_p = polygon_clip(p1,p2)
+    if inter_p is not None:
+        hull_inter = ConvexHull(inter_p)
+        return inter_p, hull_inter.volume
+    else:
+        return None, 0.0
+
+def calculate_2d_iou(box1, box2):
+    """
+    Calculate 2D IoU for two bounding boxes.
+    box1 and box2 are (4, 2) shaped arrays representing the corners of the 2D bounding boxes.
+    """
+    x11, y11 = np.min(box1[:, 0]), np.min(box1[:, 1])
+    x12, y12 = np.max(box1[:, 0]), np.max(box1[:, 1])
+    x21, y21 = np.min(box2[:, 0]), np.min(box2[:, 1])
+    x22, y22 = np.max(box2[:, 0]), np.max(box2[:, 1])
+
+    xi1, yi1 = max(x11, x21), max(y11, y21)
+    xi2, yi2 = min(x12, x22), min(y12, y22)
+
+    inter_area = max(0, xi2 - xi1) * max(0, yi2 - yi1)
+    box1_area = (x12 - x11) * (y12 - y11)
+    box2_area = (x22 - x21) * (y22 - y21)
+
+    union_area = box1_area + box2_area - inter_area
+
+    iou = inter_area / union_area if union_area != 0 else 0
+
+    return iou
+
+
+def calculate_3d_iou(box1, box2):
+    """
+    Calculate 3D IoU for two bounding boxes.
+    box1 and box2 are (8, 3) shaped arrays representing the corners of the 3D bounding boxes.
+    """
+    x11, y11, z11 = np.min(box1[:, 0]), np.min(box1[:, 1]), np.min(box1[:, 2])
+    x12, y12, z12 = np.max(box1[:, 0]), np.max(box1[:, 1]), np.max(box1[:, 2])
+    x21, y21, z21 = np.min(box2[:, 0]), np.min(box2[:, 1]), np.min(box2[:, 2])
+    x22, y22, z22 = np.max(box2[:, 0]), np.max(box2[:, 1]), np.max(box2[:, 2])
+
+    xi1, yi1, zi1 = max(x11, x21), max(y11, y21), max(z11, z21)
+    xi2, yi2, zi2 = min(x12, x22), min(y12, y22), min(z12, z22)
+
+    inter_volume = max(0, xi2 - xi1) * max(0, yi2 - yi1) * max(0, zi2 - zi1)
+    box1_volume = (x12 - x11) * (y12 - y11) * (z12 - z11)
+    box2_volume = (x22 - x21) * (y22 - y21) * (z22 - z21)
+
+    union_volume = box1_volume + box2_volume - inter_volume
+
+    iou = inter_volume / union_volume if union_volume != 0 else 0
+
+    return iou
+
+
+def calculate_ious(corners1, corners2):
+    """
+    Calculate both 2D and 3D IoU for given bounding boxes.
+    corners1 and corners2 are (8, 3) shaped arrays representing the corners of the 3D bounding boxes.
+    """
+    # Project to 2D by taking only the first two coordinates
+    corners1_2d = corners1[:, :2]
+    corners2_2d = corners2[:, :2]
+
+    iou_2d = calculate_2d_iou(corners1_2d, corners2_2d)
+    iou_3d = calculate_3d_iou(corners1, corners2)
+
+    return iou_3d, iou_2d
+
 
 def poly_area(x, y):
     """ Ref: http://stackoverflow.com/questions/24467972/calculate-area-of-polygon-given-x-y-coordinates """
@@ -38,14 +168,13 @@ def box3d_iou(corners1, corners2):
     area1 = poly_area(np.array(rect1)[:, 0], np.array(rect1)[:, 1])
     area2 = poly_area(np.array(rect2)[:, 0], np.array(rect2)[:, 1])
 
-    # inter, inter_area = convex_hull_intersection(rect1, rect2)
-    # iou_2d = inter_area / (area1 + area2 - inter_area)
-    int_area = intersection_area(rect1, rect2)
-    iou_2d = int_area / (area1 + area2 - int_area)
+    inter, inter_area = convex_hull_intersection(rect1, rect2)
+    iou_2d = inter_area / (area1 + area2 - inter_area)
 
     ymax = min(corners1[0, 2], corners2[0, 2])
     ymin = max(corners1[4, 2], corners2[4, 2])
-    inter_vol = int_area * max(0.0, ymax - ymin)
+
+    inter_vol = inter_area * max(0.0, ymax - ymin)
     vol1 = box3d_vol(corners1)
     vol2 = box3d_vol(corners2)
     iou = inter_vol / (vol1 + vol2 - inter_vol)
@@ -88,6 +217,7 @@ def center_to_corner_box3d_torch(centers, sizes, angles, origin=(0.5, 0.5, 1.)):
                             dim=1) - y_shift.unsqueeze(1)
     z_corners = torch.stack([0.5 * h, 0.5 * h, 0.5 * h, 0.5 * h, -0.5 * h, -0.5 * h, -0.5 * h, -0.5 * h],
                             dim=1) - z_shift.unsqueeze(1)
+
 
     corners = torch.stack((x_corners, y_corners, z_corners), dim=-1)  # shape (N, 8, 3)
 
@@ -252,6 +382,7 @@ def compute_box3d_iou(center_pred,
                                     heading_residual[i], NUM_HEADING_BIN)
         box_size = class2size(size_class[i], size_residual[i])
 
+
         corners_3d = center_to_corner_box3d_numpy(center_pred[i], box_size, heading_angle, )
 
         heading_angle_label = class2angle(heading_class_label[i],
@@ -261,7 +392,30 @@ def compute_box3d_iou(center_pred,
         corners_3d_label = center_to_corner_box3d_numpy(center_label[i], box_size_label,
                                                         np.squeeze(heading_angle_label), )
 
+        # iou_3d, iou_2d = calculate_ious(corners_3d, corners_3d_label)
         iou_3d, iou_2d = box3d_iou(corners_3d, corners_3d_label)
+
+        # if i == 0:
+        #     print("**box_size**")
+        #     print(box_size)
+        #     print("**heading_angle**")
+        #     print(heading_angle)
+        #     print("**box_size_label**")
+        #     print(box_size_label)
+        #     print("**heading_angle_label**")
+        #     print(heading_angle_label)
+        #
+        #     print("iou_3d")
+        #     print(iou_3d)
+        #     print("iou_2d")
+        #     print(iou_2d)
+        #
+        #     print("corners_3d")
+        #     print(corners_3d)
+        #     print("corners_3d_label")
+        #     print(corners_3d_label)
+
+
         iou3d_list.append(iou_3d)
         iou2d_list.append(iou_2d)
     return np.array(iou2d_list, dtype=np.float32), np.array(iou3d_list, dtype=np.float32)
@@ -323,3 +477,36 @@ def class2size(pred_cls, residual):
     mean_size = g_type_mean_size[type_str]
 
     return mean_size + residual
+
+
+def compute_box3d(center_pred,
+                      heading_logits, heading_residual,
+                      size_logits, size_residual):
+    batch_size = heading_logits.shape[0]
+    heading_class = np.argmax(heading_logits, 1)  # B
+    heading_residual = np.array([heading_residual[i, heading_class[i]] \
+                                 for i in range(batch_size)])  # B,
+    size_class = np.argmax(size_logits, 1)  # B
+    size_residual = np.vstack([size_residual[i, size_class[i], :] \
+                               for i in range(batch_size)])
+
+    corners = []
+
+    for i in range(batch_size):
+        heading_angle = class2angle(heading_class[i],
+                                    heading_residual[i], NUM_HEADING_BIN)
+        box_size = class2size(size_class[i], size_residual[i])
+
+        # corners_3d = center_to_corner_box3d_numpy(center_pred[i], box_size, heading_angle, )
+
+        corners_3d = {
+            'center': center_pred[i],
+            'heading_angle': heading_angle,
+            'size': box_size,
+        }
+
+        corners.append(corners_3d)
+
+
+
+    return corners

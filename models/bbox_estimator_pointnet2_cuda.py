@@ -64,6 +64,8 @@ class PointNetPPBoxEstimationCuda(nn.Module):
 
         global_feat = l3_points.view(bs, -1)
 
+        print(global_feat.shape)
+
         expand_one_hot_vec = one_hot_vec.view(bs, -1)  # bs,3
         expand_global_feat = torch.cat([global_feat, expand_one_hot_vec], 1)  # bs,515
 
@@ -146,22 +148,42 @@ class BoxEstimatorPointNetPlusPlusCuda(nn.Module):
         # print(object_pts_xyz_new.shape)
         box_pred = self.est(object_pts_xyz_new, one_hot)
 
-        parsed_pred = parse_output_to_tensors(box_pred, stage1_center)
+        # parsed_pred = parse_output_to_tensors(box_pred, stage1_center)
+        #
+        # box3d_center = parsed_pred.get('center_boxnet') + stage1_center
 
-        box3d_center = parsed_pred.get('center_boxnet') + stage1_center
+        if not torch.onnx.is_in_onnx_export():
 
-        losses = self.Loss(box3d_center, stage1_center, parsed_pred, data_dicts)
+            parsed_pred = parse_output_to_tensors(box_pred, stage1_center)
 
-        for key in losses.keys():
-            losses[key] = losses[key] / bs
+            box3d_center = parsed_pred.get('center_boxnet') + stage1_center
 
-        with torch.no_grad():
-            iou2ds, iou3ds = compute_box3d_iou(box3d_center, parsed_pred, data_dicts)
+            losses = self.Loss(box3d_center, stage1_center, parsed_pred, data_dicts)
 
-        metrics = {
-            'iou2d': iou2ds.mean(),
-            'iou3d': iou3ds.mean(),
-            'iou3d_0.7': np.sum(iou3ds >= 0.7) / bs
-        }
+            for key in losses.keys():
+                losses[key] = losses[key] / bs
 
-        return losses, metrics
+            with torch.no_grad():
+                iou2ds, iou3ds = compute_box3d_iou(box3d_center, parsed_pred, data_dicts)
+
+            metrics = {
+                'iou2d': iou2ds.mean(),
+                'iou3d': iou3ds.mean(),
+                'iou3d_0.7': np.sum(iou3ds >= 0.7) / bs
+            }
+
+            return losses, metrics
+
+        else:
+
+            bbox = {
+                'box_pred': box_pred,
+                'stage1_center': stage1_center,
+            }
+            print("box_pred")
+            print(box_pred.shape)
+            print("stage1_center")
+            print(stage1_center.shape)
+
+
+            return bbox

@@ -112,17 +112,17 @@ def save_best_model(model, optimizer, epoch, metrics, best_metrics, save_dir):
 def main():
     # Define model and classes
     classes = ['car', 'truck', 'bus', 'trailer']
-    # model = BoxEstimatorPointNetPlusPlus(len(classes)).cuda()
-    model = BoxEstimatorPointNet(len(classes)).cuda()
+    model = BoxEstimatorPointNetPlusPlus(len(classes)).cuda()
+    # model = BoxEstimatorPointNet(len(classes)).cuda()
 
-    weights = torch.load('/home/kaan/projects/bbox_estimator/weights/v1_min10_acc0.610-epoch049.pth')
+    weights = torch.load('/home/kaan/Downloads/weights_acc0.690-epoch126.zip')
     model.load_state_dict(weights['model_state_dict'], strict=False)
 
     # Load datasets and dataloaders
-    data_dir = "/home/kaan/custom_dataset/"
+    data_dir = "/home/kaan/dataset_concat/"
 
-    test_dataset = PointCloudDataset(data_dir, classes, min_points=10, train=True, augment_data=False)
-    test_loader = DataLoader(test_dataset, batch_size=64, shuffle=False)
+    test_dataset = PointCloudDataset(data_dir, classes, min_points=2000, train=False, augment_data=False)
+    test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
 
     test_losses, test_metrics = evaluate_model(model, test_loader)
 

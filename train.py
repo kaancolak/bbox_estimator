@@ -9,6 +9,7 @@ import logging
 from models.bbox_estimator_pointnet import BoxEstimatorPointNet
 from models.bbox_estimator_pointnet2 import BoxEstimatorPointNetPlusPlus
 from models.bbox_estimator_pointnet2_cuda import BoxEstimatorPointNetPlusPlusCuda
+from models.bbox_estimator_pointnet2_tensorrt import BoxEstimatorPointNetPlusPlusTensorRT
 from dataset.pointcloud_dataset import PointCloudDataset
 
 # Ensure CUDA launch blocking for debugging
@@ -36,6 +37,7 @@ def evaluate_model(model, dataloader):
     }
     metrics = {
         'iou2d': 0.0,
+        'iou2d_0.7': 0.0,
         'iou3d': 0.0,
         'iou3d_0.7': 0.0,
     }
@@ -74,6 +76,7 @@ def train_model(model, dataloader, optimizer):
     }
     metrics = {
         'iou2d': 0.0,
+        'iou2d_0.7': 0.0,
         'iou3d': 0.0,
         'iou3d_0.7': 0.0,
     }
@@ -139,15 +142,15 @@ class Config:
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Training script for bbox estimator")
-    parser.add_argument('--lr', type=float, default=0.0001, help='Learning rate')
+    parser.add_argument('--lr', type=float, default=0.001, help='Learning rate')
     parser.add_argument('--batch_size', type=int, default=32, help='Batch size')
-    parser.add_argument('--weight_decay', type=float, default=0.0001, help='Weight decay')
+    parser.add_argument('--weight_decay', type=float, default=0.01, help='Weight decay')
     parser.add_argument('--step_size', type=int, default=20, help='Step size for LR scheduler')
     parser.add_argument('--gamma', type=float, default=0.7, help='Gamma for LR scheduler')
     parser.add_argument('--max_epochs', type=int, default=200, help='Number of epochs')
-    parser.add_argument('--save_dir', type=str, default='/gcs/pc-shape-estimation/weights/',
+    parser.add_argument('--save_dir', type=str, default='/home/kaan/projects/bbox_estimator/weights/tensorrt_imp/',
                         help='Directory to save models')
-    parser.add_argument('--data_dir', type=str, default='/gcs/pc-shape-estimation/dataset_concat/',
+    parser.add_argument('--data_dir', type=str, default='/home/kaan/dataset_concat/',
                         help='Directory to save models')
     args = parser.parse_args()
     return args
@@ -156,24 +159,27 @@ def parse_args():
 def main(config):
     # Define model and classes
     # model = BoxEstimatorPointNetPlusPlus(len(config.classes)).cuda()
-    model = BoxEstimatorPointNet(len(config.classes)).cuda()
+    # model = BoxEstimatorPointNet(len(config.classes)).cuda()
+    model = BoxEstimatorPointNetPlusPlusTensorRT(len(config.classes)).cuda()
     # model = BoxEstimatorPointNetPlusPlusCuda(len(config.classes)).cuda()
 
     # weights = torch.load('/home/kaan/projects/bbox_estimator/weights/v1_min10_acc0.610-epoch049.pth')
     # model.load_state_dict(weights['model_state_dict'], strict=False)
 
     # Load datasets and dataloaders
-    train_dataset = PointCloudDataset(config.data_dir, config.classes, min_points=10, train=True, augment_data=False,
-                                      use_mirror=False, use_shift=False)
+    train_dataset = PointCloudDataset(config.data_dir, config.classes, min_points=16, train=True, augment_data=True,
+                                      use_mirror=True, use_shift=True)
     train_loader = DataLoader(train_dataset, batch_size=config.batch_size, shuffle=True)
 
-    test_dataset = PointCloudDataset(config.data_dir_test, config.classes, min_points=10, train=False,
-                                     augment_data=False)
+    test_dataset = PointCloudDataset(config.data_dir_test, config.classes, min_points=16, train=False,
+                                     augment_data=True, use_mirror=True, use_shift=True)
     test_loader = DataLoader(test_dataset, batch_size=config.batch_size, shuffle=False)
 
     # Define training parameters
-    optimizer = optim.Adam(model.parameters(), lr=config.lr, betas=config.betas, eps=config.eps,
-                           weight_decay=config.weight_decay)
+    optimizer = optim.AdamW(model.parameters(), lr=config.lr, betas=config.betas, eps=config.eps,
+                weight_decay=config.weight_decay)
+
+
     scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=config.step_size, gamma=config.gamma)
 
     best_metrics = {'iou3d_0.7': 0.0, 'file': ''}

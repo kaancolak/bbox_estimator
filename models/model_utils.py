@@ -47,6 +47,45 @@ def parse_output_to_tensors(box_pred, stage1_center):
         'size_residual': size_residual
     }
 
+def parse_output_to_tensors_cpu(box_pred):
+    bs = box_pred.shape[0]
+    # center
+    center_boxnet = box_pred[:, :3]
+    c = 3
+
+    # heading
+    heading_scores = box_pred[:, c:c + NUM_HEADING_BIN]
+    c += NUM_HEADING_BIN
+    heading_residual_normalized = \
+        box_pred[:, c:c + NUM_HEADING_BIN]
+    heading_residual = \
+        heading_residual_normalized * (np.pi / NUM_HEADING_BIN)
+    c += NUM_HEADING_BIN
+
+    # size
+    size_scores = box_pred[:, c:c + NUM_SIZE_CLUSTER]
+
+    c += 4
+    size_residual_normalized = \
+        box_pred[:, c:c + 3 * NUM_SIZE_CLUSTER].contiguous()
+    c += 3 * NUM_SIZE_CLUSTER
+
+    size_residual_normalized = \
+        size_residual_normalized.view(bs, NUM_SIZE_CLUSTER, 3)
+
+    size_residual = size_residual_normalized * \
+                    torch.from_numpy(g_mean_size_arr).unsqueeze(0).repeat(bs, 1, 1)
+
+    return {
+        'center_boxnet': center_boxnet,
+        'heading_scores': heading_scores,
+        'heading_residual_normalized': heading_residual_normalized,
+        'heading_residual': heading_residual,
+        'size_scores': size_scores,
+        'size_residual_normalized': size_residual_normalized,
+        'size_residual': size_residual
+    }
+
 
 def get_box3d_corners(center, heading_residual, size_residual):
     """
@@ -145,8 +184,8 @@ class FrustumPointNetLoss(nn.Module):
                                                    delta=1.0)
 
         # Corner Loss
-        corners_3d = get_box3d_corners(center, \
-                                       heading_residual, size_residual).cuda()
+        corners_3d = get_box3d_corners(center, heading_residual, size_residual).cuda()
+
         gt_mask = hcls_onehot.view(bs, NUM_HEADING_BIN, 1).repeat(1, 1, NUM_SIZE_CLUSTER) * \
                   scls_onehot.view(bs, 1, NUM_SIZE_CLUSTER).repeat(1, NUM_HEADING_BIN, 1)
         corners_3d_pred = torch.sum( \

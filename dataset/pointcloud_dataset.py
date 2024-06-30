@@ -71,7 +71,14 @@ class PointCloudDataset(Dataset):
                 obj_points = np.fromfile(f, dtype=np.float32).reshape(-1, 3)
 
         obj_points = obj_points[:, :3]
+
+        #Shuffle points order rondomly
+        shuffled_indices = np.random.permutation(len(obj_points))
+        obj_points = obj_points[shuffled_indices]
+
         obj_points = self.pad_or_sample_points(obj_points, self.num_points)
+
+
         obj_points[:, :3] += self.bounding_boxes[idx][:3]  # normalized to real position
 
         bounding_box = self.bounding_boxes[idx]
@@ -79,7 +86,6 @@ class PointCloudDataset(Dataset):
         if self.augment_data:
 
             if self.use_mirror:
-
                 rand_int = np.random.randint(0, 3)
 
                 if rand_int == 0:
@@ -88,9 +94,11 @@ class PointCloudDataset(Dataset):
                     obj_points, bounding_box = self.mirror_point_cloud(obj_points, bounding_box, 'xz')
 
             if self.use_shift:
-                obj_points, bounding_box = self.random_shift_point_cloud(obj_points, bounding_box, [20, 5])
+                shifter = np.random.uniform(0.95, 1.05)
+                obj_points[:, :2] *= shifter  # Shift the point cloud
+                bounding_box[:2] *= shifter  # Shift the center of the bounding box
 
-            obj_points, bounding_box = self.rotate_point_cloud(obj_points, bounding_box)
+            # obj_points, bounding_box = self.rotate_point_cloud(obj_points, bounding_box)
 
         one_hot_vector = torch.zeros(len(self.classes))
         ind = self.classes.index(self.labels[idx])
@@ -213,6 +221,5 @@ class PointCloudDataset(Dataset):
 
 
         label[6] = label[6] + angle
-
 
         return rotated_point_cloud, label

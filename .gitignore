@@ -3,3 +3,8 @@
 weights/
 pointnet2_ops_lib/build
 pointnet2_ops_lib/pointnet2_ops.egg-info
+build/
+*.so
+rd3d.egg-info/
+*.engine
+*.onnx
