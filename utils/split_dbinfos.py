@@ -5,8 +5,9 @@ import argparse
 
 def parse_arguments():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--dataset_path', type=str, default='/media/kaan/Extreme SSD/nuscenes/', help='dataset path')
+    parser.add_argument('--dataset_path', type=str, default='/media/kaan/Extreme SSD/nuscenes/a', help='dataset path')
     parser.add_argument('--classes', type=str, nargs='*', default=['car', 'truck', 'bus', 'trailer'], help='classes to use')
+    parser.add_argument('--train_ratio', type=float, default=0.8, help='Split ratio for training and validation datasets')
     return parser.parse_args()
 
 
@@ -33,13 +34,12 @@ def main():
     print(args.classes)
 
     #split the dataset
-    split = 0.8
     train_data = {}
     test_data = {}
     for key in args.classes:
         data[key] = np.array(data[key])
         np.random.shuffle(data[key])
-        split_idx = int(len(data[key]) * split)
+        split_idx = int(len(data[key]) * args.train_ratio)
         train_data[key] = data[key][:split_idx]
         test_data[key] = data[key][split_idx:]
 
